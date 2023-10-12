@@ -93,6 +93,7 @@ impl ShardRangeCache {
                 .scan_shard_range(ScanShardRangeRequest {
                     storage_id,
                     range_start: range_start.clone(),
+                    range_count: 10,
                 })
                 .await?
                 .into_inner();
