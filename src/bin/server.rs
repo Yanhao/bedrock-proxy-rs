@@ -7,7 +7,7 @@ use tokio::signal;
 use tonic::transport::Server as GrpcServer;
 use tracing::{error, info};
 
-use idl_gen::proxy_pb::proxy_service_server::ProxyServiceServer;
+use idl_gen::proxy::proxy_service_server::ProxyServiceServer;
 
 use bedrock_proxy_rs::{
     config::{self, DEFAULT_CONFIG_FILE},

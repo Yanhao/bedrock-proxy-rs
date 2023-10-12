@@ -1,12 +1,12 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use arc_swap::ArcSwapOption;
 use chrono::prelude::*;
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 
-use idl_gen::metaserver::{meta_service_client::MetaServiceClient, GetShardRoutesRequest};
+use idl_gen::metaserver::{meta_service_client::MetaServiceClient, GetShardRouteRequest};
 use tonic::transport::Channel;
 
 pub static SHARD_ROUTER: Lazy<ArcSwapOption<ShardRouter>> = Lazy::new(|| None.into());
@@ -14,6 +14,7 @@ pub static SHARD_ROUTER: Lazy<ArcSwapOption<ShardRouter>> = Lazy::new(|| None.in
 #[derive(Clone)]
 pub struct Shard {
     pub(crate) shard_id: ShardID,
+    #[allow(unused)]
     pub(crate) replicates: Vec<SocketAddr>,
     pub(crate) leader: SocketAddr,
     expire_at: DateTime<Utc>,
@@ -65,7 +66,7 @@ impl ShardRouter {
                 &shard_id.to_string(),
                 (|| async move {
                     let a = ms_client
-                        .get_shard_routes(GetShardRoutesRequest {
+                        .get_shard_route(GetShardRouteRequest {
                             timestamp: Some(prost_types::Timestamp {
                                 seconds: 0,
                                 nanos: 0,

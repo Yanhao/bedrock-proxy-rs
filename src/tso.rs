@@ -5,7 +5,7 @@ use arc_swap::ArcSwapOption;
 use once_cell::sync::Lazy;
 use tonic::transport::Channel;
 
-use idl_gen::metaserver::{meta_service_client::MetaServiceClient, AllocateTxIDsRequest};
+use idl_gen::metaserver::{meta_service_client::MetaServiceClient, AllocateTxidsRequest};
 
 pub static TSO: Lazy<ArcSwapOption<Tso>> = Lazy::new(|| None.into());
 
@@ -40,11 +40,11 @@ impl Tso {
 
         let mut ms_client = self.ms_client.clone();
         let resp = ms_client
-            .allocate_tx_i_ds(AllocateTxIDsRequest { count: 10000 })
+            .allocate_txids(AllocateTxidsRequest { count: 10000 })
             .await?
             .into_inner();
 
-        let limit = *resp.tx_ids.last().unwrap();
+        let limit = *resp.txids.last().unwrap();
         self.limit.store(limit, atomic::Ordering::Relaxed);
 
         Ok(self.current.fetch_add(1, atomic::Ordering::Relaxed) + 1)

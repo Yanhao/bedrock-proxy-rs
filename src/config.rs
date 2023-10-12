@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use tracing::{debug, error, info};
@@ -16,7 +16,7 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    pub fn parse_config_file(file: &Path) -> Result<Configuration> {
+    pub fn parse_config_file(_file: &Path) -> Result<Configuration> {
         todo!()
     }
 

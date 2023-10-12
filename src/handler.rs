@@ -1,12 +1,12 @@
 use std::pin::Pin;
 
 use tokio_stream::Stream;
-use tonic::{Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status};
 
-use idl_gen::dataserver::{self, shard_lock_request};
+use idl_gen::dataserver;
 use idl_gen::proxy::proxy_service_server::ProxyService;
 use idl_gen::proxy::{
-    self, BatchRequest, BatchResponse, Error, KvDeleteRequest, KvDeleteResponse, KvGetRequest,
+    self, BatchRequest, BatchResponse, KvDeleteRequest, KvDeleteResponse, KvGetRequest,
     KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, PredicateOp,
 };
 
@@ -45,12 +45,12 @@ impl ProxyService for ProxyServer {
             .r()
             .get_shard(sr.shard_id)
             .await
-            .map_err(|x| Status::internal(""))?;
+            .map_err(|_| Status::internal(""))?;
 
         let mut conn = CONNS
             .get_conn(shard.leader)
             .await
-            .map_err(|x| Status::internal(""))?;
+            .map_err(|_| Status::internal(""))?;
 
         let _ = conn
             .kv_set(dataserver::KvSetRequest {
@@ -89,12 +89,12 @@ impl ProxyService for ProxyServer {
             .r()
             .get_shard(sr.shard_id)
             .await
-            .map_err(|x| Status::internal(""))?;
+            .map_err(|_| Status::internal(""))?;
 
         let mut conn = CONNS
             .get_conn(shard.leader)
             .await
-            .map_err(|x| Status::internal(""))?;
+            .map_err(|_| Status::internal(""))?;
 
         let resp = conn
             .kv_get(dataserver::KvGetRequest {
@@ -135,12 +135,12 @@ impl ProxyService for ProxyServer {
             .r()
             .get_shard(sr.shard_id)
             .await
-            .map_err(|x| Status::internal(""))?;
+            .map_err(|_| Status::internal(""))?;
 
         let mut conn = CONNS
             .get_conn(shard.leader)
             .await
-            .map_err(|x| Status::internal(""))?;
+            .map_err(|_| Status::internal(""))?;
 
         let _ = conn
             .kv_del(dataserver::KvDelRequest {
@@ -184,19 +184,19 @@ impl ProxyService for ProxyServer {
                 .r()
                 .get_shard(sr.shard_id)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let mut conn = CONNS
                 .get_conn(shard.leader)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let resp = conn
                 .kv_scan(dataserver::KvScanRequest {
                     txid,
                     shard_id: shard.shard_id,
-                    start_key: start_key.clone().as_bytes().to_vec(),
-                    end_key: todo!(),
+                    prefix: start_key.clone().into(),
+                    limit: 10,
                 })
                 .await
                 .map_err(|_| Status::internal(""))?;
@@ -223,7 +223,7 @@ impl ProxyService for ProxyServer {
         if !self
             .check_predicates(txid, predicates)
             .await
-            .map_err(|x| Status::internal(""))?
+            .map_err(|_| Status::internal(""))?
         {
             return Ok(Response::new(BatchResponse {
                 err: proxy::Error::Ok as i32,
@@ -243,12 +243,12 @@ impl ProxyService for ProxyServer {
                 .r()
                 .get_shard(sr.shard_id)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let mut conn = CONNS
                 .get_conn(shard.leader)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let _ = conn
                 .prepare_tx(dataserver::PrepareTxRequest {
@@ -276,12 +276,12 @@ impl ProxyService for ProxyServer {
                 .r()
                 .get_shard(sr.shard_id)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let mut conn = CONNS
                 .get_conn(shard.leader)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let _ = conn
                 .commit_tx(dataserver::CommitTxRequest {
@@ -316,12 +316,12 @@ impl ProxyServer {
                 .r()
                 .get_shard(sr.shard_id)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let mut conn = CONNS
                 .get_conn(shard.leader)
                 .await
-                .map_err(|x| Status::internal(""))?;
+                .map_err(|_| Status::internal(""))?;
 
             let resp = conn
                 .kv_get(dataserver::KvGetRequest {

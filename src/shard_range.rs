@@ -1,4 +1,4 @@
-use std::{ops::Range, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
@@ -8,9 +8,7 @@ use tokio::{select, sync::mpsc};
 use tonic::transport::Channel;
 use tracing::info;
 
-use idl_gen::metaserver::{meta_service_client::MetaServiceClient, ScanStorageShardsRequest};
-
-use crate::utils::R;
+use idl_gen::metaserver::{meta_service_client::MetaServiceClient, ScanShardRangeRequest};
 
 pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None.into());
 
@@ -18,7 +16,9 @@ pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None
 pub struct ShardRange {
     pub(crate) shard_id: u64,
     range_start: Vec<u8>,
+    #[allow(dead_code)]
     range_end: Vec<u8>,
+    #[allow(dead_code)]
     update_time: DateTime<Utc>,
 }
 
@@ -67,7 +67,7 @@ impl ShardRangeCache {
         let mut range_start = vec![];
         loop {
             let a = ms_client
-                .scan_storage_shards(ScanStorageShardsRequest {
+                .scan_shard_range(ScanShardRangeRequest {
                     storage_id,
                     range_start: range_start.clone(),
                 })
@@ -84,8 +84,8 @@ impl ShardRangeCache {
 
             let (first_key, last_key) = unsafe {
                 (
-                    String::from_utf8_unchecked(a.shards.first().unwrap().range_start.clone()),
-                    String::from_utf8_unchecked(a.shards.last().unwrap().range_end.clone()),
+                    String::from_utf8_unchecked(a.ranges.first().unwrap().range_start.clone()),
+                    String::from_utf8_unchecked(a.ranges.last().unwrap().range_end.clone()),
                 )
             };
 
@@ -103,7 +103,7 @@ impl ShardRangeCache {
                 guard.remove(i.0);
             }
 
-            for s in a.shards.iter() {
+            for s in a.ranges.iter() {
                 unsafe {
                     guard.insert(
                         String::from_utf8_unchecked(s.range_start.clone()),
@@ -117,7 +117,7 @@ impl ShardRangeCache {
                 }
             }
 
-            range_start = a.shards.last().unwrap().range_end.clone();
+            range_start = a.ranges.last().unwrap().range_end.clone();
         }
 
         Ok(())
