@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
+use bytes::Bytes;
 use chrono::prelude::*;
 use once_cell::sync::Lazy;
-use tokio::{select, sync::mpsc};
+use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tonic::transport::Channel;
 use tracing::info;
 
@@ -22,51 +23,73 @@ pub struct ShardRange {
     update_time: DateTime<Utc>,
 }
 
-#[derive(Default)]
 pub struct ShardRangeCache {
-    shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<String, ShardRange>>>,
+    ms_client: MetaServiceClient<Channel>,
+    shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
 impl ShardRangeCache {
-    pub fn new() -> Self {
-        Self {
+    pub async fn new() -> Result<Self> {
+        let ms_client = MetaServiceClient::connect("").await?;
+        Ok(Self {
+            ms_client,
             shard_ranges: Arc::new(parking_lot::RwLock::new(im::OrdMap::new())),
             stop_ch: None,
-        }
+        })
     }
 
-    pub fn get_shard_range(&self, key: impl AsRef<str>) -> Result<ShardRange> {
+    pub fn get_shard_range(&self, key: Bytes) -> Result<ShardRange> {
         let guard = self.shard_ranges.read();
-        let range = guard
+        let (_, sr) = guard
             .get_prev(key.as_ref())
             .ok_or(anyhow!("get prev failed"))?;
 
-        Ok(range.1.clone())
+        Ok(sr.clone())
     }
 
-    pub fn scan_shard_range(&self, start: String, end: String) -> Result<Vec<ShardRange>> {
+    pub fn scan_shard_range(&self, start: Bytes, end: Bytes) -> Result<Vec<ShardRange>> {
         let ranges_copy = self.shard_ranges.read().clone();
         let mut r = ranges_copy
             .range(start.clone()..end)
             .map(|(_, r)| r.clone())
             .collect::<Vec<_>>();
 
-        if unsafe { String::from_utf8_unchecked(r.first().unwrap().range_start.clone()) } != start {
+        if Bytes::from(r.first().unwrap().range_start.clone()) != start {
             r.insert(0, ranges_copy.get_prev(&start).unwrap().1.clone());
         }
 
         Ok(r)
     }
 
+    pub async fn update_partial_ranges(
+        &self,
+        storage_id: u32,
+        start: Bytes,
+        end: Bytes,
+    ) -> Result<()> {
+        Self::update_ranges(
+            storage_id,
+            self.ms_client.clone(),
+            self.shard_ranges.clone(),
+            start,
+            end,
+        )
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn update_ranges(
         storage_id: u32,
         mut ms_client: MetaServiceClient<Channel>,
-        shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<String, ShardRange>>>,
+        shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
+        start: Bytes,
+        end: Bytes,
     ) -> Result<()> {
         let mut range_start = vec![];
         loop {
-            let a = ms_client
+            let resp = ms_client
                 .scan_shard_range(ScanShardRangeRequest {
                     storage_id,
                     range_start: range_start.clone(),
@@ -74,50 +97,48 @@ impl ShardRangeCache {
                 .await?
                 .into_inner();
 
-            if a.is_end {
+            if resp.is_end {
                 break;
             }
 
-            let mut guard = shard_ranges.write();
+            let ranges_copy = shard_ranges.write().clone();
 
-            let ranges_copy = guard.clone();
+            let (first_key, last_key) = (
+                Bytes::from(resp.ranges.first().unwrap().range_start.clone()),
+                Bytes::from(resp.ranges.last().unwrap().range_end.clone()),
+            );
 
-            let (first_key, last_key) = unsafe {
-                (
-                    String::from_utf8_unchecked(a.ranges.first().unwrap().range_start.clone()),
-                    String::from_utf8_unchecked(a.ranges.last().unwrap().range_end.clone()),
-                )
+            let ranges_to_remove = {
+                let mut r = ranges_copy
+                    .range(first_key.clone()..last_key.clone())
+                    .map(|(range_start, _)| range_start.clone())
+                    .collect::<Vec<_>>();
+
+                if first_key != *(r.first().unwrap()) {
+                    if let Some((range_start, _)) = ranges_copy.get_prev(&first_key) {
+                        r.insert(0, range_start.clone());
+                    }
+                }
+                r
             };
 
-            let mut ranges_to_remove = ranges_copy
-                .range(first_key.clone()..last_key.clone())
-                .collect::<Vec<_>>();
-
-            if first_key != *(ranges_to_remove.first().unwrap().0) {
-                if let Some(a) = ranges_copy.get_prev(&first_key) {
-                    ranges_to_remove.insert(0, a);
-                }
+            for range_key in ranges_to_remove.iter() {
+                shard_ranges.write().remove(range_key);
             }
 
-            for i in ranges_to_remove.iter() {
-                guard.remove(i.0);
+            for sr in resp.ranges.iter() {
+                shard_ranges.write().insert(
+                    Bytes::from(sr.range_start.clone()),
+                    ShardRange {
+                        shard_id: sr.shard_id,
+                        range_start: sr.range_start.clone(),
+                        range_end: sr.range_end.clone(),
+                        update_time: Utc::now(),
+                    },
+                );
             }
 
-            for s in a.ranges.iter() {
-                unsafe {
-                    guard.insert(
-                        String::from_utf8_unchecked(s.range_start.clone()),
-                        ShardRange {
-                            shard_id: s.shard_id,
-                            range_start: s.range_start.clone(),
-                            range_end: s.range_end.clone(),
-                            update_time: Utc::now(),
-                        },
-                    );
-                }
-            }
-
-            range_start = a.ranges.last().unwrap().range_end.clone();
+            range_start = last_key.into();
         }
 
         Ok(())
@@ -132,19 +153,21 @@ impl ShardRangeCache {
         let shard_ranges = self.shard_ranges.clone();
 
         tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
             loop {
                 select! {
                     _ = rx.recv() => {
                         break;
                     }
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+                    _ = ticker.tick() => {
+                        Self::update_ranges(1, ms_client.clone(), shard_ranges.clone(), Bytes::new(), Bytes::new())
+                        .await
+                        .unwrap();
                     }
                 }
             }
-
-            Self::update_ranges(1, ms_client.clone(), shard_ranges.clone())
-                .await
-                .unwrap();
 
             info!("shard router stopped ...");
         });

@@ -1,5 +1,6 @@
 use std::pin::Pin;
 
+use bytes::Bytes;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 
@@ -37,7 +38,7 @@ impl ProxyService for ProxyServer {
         let sr = SHARD_RANGE
             .load()
             .r()
-            .get_shard_range(unsafe { String::from_utf8_unchecked(request.get_ref().key.clone()) })
+            .get_shard_range(Bytes::from(request.get_ref().key.clone()))
             .map_err(|_| Status::internal(""))?;
 
         let shard = SHARD_ROUTER
@@ -81,7 +82,7 @@ impl ProxyService for ProxyServer {
         let sr = SHARD_RANGE
             .load()
             .r()
-            .get_shard_range(unsafe { String::from_utf8_unchecked(request.get_ref().key.clone()) })
+            .get_shard_range(Bytes::from(request.get_ref().key.clone()))
             .map_err(|_| Status::internal(""))?;
 
         let shard = SHARD_ROUTER
@@ -127,7 +128,7 @@ impl ProxyService for ProxyServer {
         let sr = SHARD_RANGE
             .load()
             .r()
-            .get_shard_range(unsafe { String::from_utf8_unchecked(request.get_ref().key.clone()) })
+            .get_shard_range(Bytes::from(request.get_ref().key.clone()))
             .map_err(|_| Status::internal(""))?;
 
         let shard = SHARD_ROUTER
@@ -168,8 +169,7 @@ impl ProxyService for ProxyServer {
             .await
             .map_err(|_| Status::internal(""))?;
 
-        let mut start_key =
-            unsafe { String::from_utf8_unchecked(request.get_ref().prefix.clone()) };
+        let mut start_key = Bytes::from(request.get_ref().prefix.clone());
         let mut limit = request.get_ref().limit;
 
         loop {
@@ -235,7 +235,7 @@ impl ProxyService for ProxyServer {
             let sr = SHARD_RANGE
                 .load()
                 .r()
-                .get_shard_range(unsafe { String::from_utf8_unchecked(kv.key.clone()) })
+                .get_shard_range(Bytes::from(kv.key.clone()))
                 .map_err(|_| Status::internal(""))?;
 
             let shard = SHARD_ROUTER
@@ -268,7 +268,7 @@ impl ProxyService for ProxyServer {
             let sr = SHARD_RANGE
                 .load()
                 .r()
-                .get_shard_range(unsafe { String::from_utf8_unchecked(kv.key.clone()) })
+                .get_shard_range(Bytes::from(kv.key.clone()))
                 .map_err(|_| Status::internal(""))?;
 
             let shard = SHARD_ROUTER
@@ -308,7 +308,7 @@ impl ProxyServer {
             let sr = SHARD_RANGE
                 .load()
                 .r()
-                .get_shard_range(unsafe { String::from_utf8_unchecked(p.key.clone()) })
+                .get_shard_range(Bytes::from(p.key.clone()))
                 .map_err(|_| Status::internal(""))?;
 
             let shard = SHARD_ROUTER

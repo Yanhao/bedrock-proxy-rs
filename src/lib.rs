@@ -26,7 +26,7 @@ pub async fn start_background_tasks() {
     });
 
     shard_range::SHARD_RANGE.s({
-        let mut shard_ranger = shard_range::ShardRangeCache::new();
+        let mut shard_ranger = shard_range::ShardRangeCache::new().await.unwrap();
         shard_ranger.start().await.unwrap();
         shard_ranger
     });
