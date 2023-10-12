@@ -5,3 +5,7 @@ pub mod service_pb {
 pub mod metaserver_pb {
     include!(concat!(env!("OUT_DIR"), "/bedrock.metaserver.rs"));
 }
+
+pub mod proxy_pb {
+    include!(concat!(env!("OUT_DIR"), "/bedrock.proxy.rs"));
+}
