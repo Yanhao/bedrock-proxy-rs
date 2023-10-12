@@ -101,6 +101,8 @@ impl ProxyService for ProxyServer {
                 txid,
                 shard_id: shard.shard_id,
                 key: request.get_ref().key.clone(),
+                need_lock: false,
+                need_unlock: false,
             })
             .await
             .map_err(|_| Status::internal(""))?;
@@ -256,6 +258,7 @@ impl ProxyService for ProxyServer {
                         key: kv.key.clone(),
                         value: kv.value.clone(),
                     }],
+                    need_lock: true,
                 })
                 .await
                 .map_err(|_| Status::internal(""))?;
@@ -320,19 +323,12 @@ impl ProxyServer {
                 .await
                 .map_err(|x| Status::internal(""))?;
 
-            let _ = conn
-                .shard_lock(service_pb::ShardLockRequest {
-                    txid,
-                    shard_id: sr.shard_id,
-                    lock: Some(shard_lock_request::Lock::Record(p.key.clone())),
-                })
-                .await
-                .map_err(|_| Status::internal(""))?;
-
             let resp = conn
                 .kv_get(service_pb::KvGetRequest {
                     txid,
                     shard_id: sr.shard_id,
+                    need_lock: true,
+                    need_unlock: false,
                     key: p.key.clone(),
                 })
                 .await
