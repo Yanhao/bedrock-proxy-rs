@@ -8,7 +8,7 @@ use tokio::{select, sync::mpsc};
 use tonic::transport::Channel;
 use tracing::info;
 
-use idl_gen::metaserver_pb::{meta_service_client::MetaServiceClient, ScanStorageShardsRequest};
+use idl_gen::metaserver::{meta_service_client::MetaServiceClient, ScanStorageShardsRequest};
 
 use crate::utils::R;
 

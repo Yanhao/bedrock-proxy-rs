@@ -3,12 +3,12 @@ use std::pin::Pin;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status, Streaming};
 
-use idl_gen::proxy_pb::proxy_service_server::ProxyService;
-use idl_gen::proxy_pb::{
+use idl_gen::dataserver::{self, shard_lock_request};
+use idl_gen::proxy::proxy_service_server::ProxyService;
+use idl_gen::proxy::{
     self, BatchRequest, BatchResponse, Error, KvDeleteRequest, KvDeleteResponse, KvGetRequest,
     KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, PredicateOp,
 };
-use idl_gen::service_pb::{self, shard_lock_request};
 
 use crate::connections::CONNS;
 use crate::shard_range::SHARD_RANGE;
@@ -53,7 +53,7 @@ impl ProxyService for ProxyServer {
             .map_err(|x| Status::internal(""))?;
 
         let _ = conn
-            .kv_set(service_pb::KvSetRequest {
+            .kv_set(dataserver::KvSetRequest {
                 txid,
                 shard_id: shard.shard_id,
                 key: request.get_ref().key.clone(),
@@ -63,7 +63,7 @@ impl ProxyService for ProxyServer {
             .map_err(|_| Status::internal(""))?;
 
         Ok(Response::new(KvSetResponse {
-            err: proxy_pb::Error::Ok as i32,
+            err: proxy::Error::Ok as i32,
         }))
     }
 
@@ -97,7 +97,7 @@ impl ProxyService for ProxyServer {
             .map_err(|x| Status::internal(""))?;
 
         let resp = conn
-            .kv_get(service_pb::KvGetRequest {
+            .kv_get(dataserver::KvGetRequest {
                 txid,
                 shard_id: shard.shard_id,
                 key: request.get_ref().key.clone(),
@@ -109,7 +109,7 @@ impl ProxyService for ProxyServer {
 
         Ok(Response::new(KvGetResponse {
             value: resp.into_inner().value,
-            err: proxy_pb::Error::Ok as i32,
+            err: proxy::Error::Ok as i32,
         }))
     }
 
@@ -143,7 +143,7 @@ impl ProxyService for ProxyServer {
             .map_err(|x| Status::internal(""))?;
 
         let _ = conn
-            .kv_del(service_pb::KvDelRequest {
+            .kv_del(dataserver::KvDelRequest {
                 txid,
                 shard_id: shard.shard_id,
                 key: request.get_ref().key.clone(),
@@ -152,7 +152,7 @@ impl ProxyService for ProxyServer {
             .map_err(|_| Status::internal(""))?;
 
         Ok(Response::new(KvDeleteResponse {
-            err: proxy_pb::Error::Ok as i32,
+            err: proxy::Error::Ok as i32,
         }))
     }
 
@@ -192,7 +192,7 @@ impl ProxyService for ProxyServer {
                 .map_err(|x| Status::internal(""))?;
 
             let resp = conn
-                .kv_scan(service_pb::KvScanRequest {
+                .kv_scan(dataserver::KvScanRequest {
                     txid,
                     shard_id: shard.shard_id,
                     start_key: start_key.clone().as_bytes().to_vec(),
@@ -226,7 +226,7 @@ impl ProxyService for ProxyServer {
             .map_err(|x| Status::internal(""))?
         {
             return Ok(Response::new(BatchResponse {
-                err: proxy_pb::Error::Ok as i32,
+                err: proxy::Error::Ok as i32,
             }));
         }
 
@@ -251,10 +251,10 @@ impl ProxyService for ProxyServer {
                 .map_err(|x| Status::internal(""))?;
 
             let _ = conn
-                .prepare_tx(service_pb::PrepareTxRequest {
+                .prepare_tx(dataserver::PrepareTxRequest {
                     txid,
                     shard_id: sr.shard_id,
-                    kvs: vec![service_pb::KeyValue {
+                    kvs: vec![dataserver::KeyValue {
                         key: kv.key.clone(),
                         value: kv.value.clone(),
                     }],
@@ -284,7 +284,7 @@ impl ProxyService for ProxyServer {
                 .map_err(|x| Status::internal(""))?;
 
             let _ = conn
-                .commit_tx(service_pb::CommitTxRequest {
+                .commit_tx(dataserver::CommitTxRequest {
                     txid,
                     shard_id: sr.shard_id,
                 })
@@ -293,7 +293,7 @@ impl ProxyService for ProxyServer {
         }
 
         Ok(Response::new(BatchResponse {
-            err: proxy_pb::Error::Ok as i32,
+            err: proxy::Error::Ok as i32,
         }))
     }
 }
@@ -302,7 +302,7 @@ impl ProxyServer {
     async fn check_predicates(
         &self,
         txid: u64,
-        predicates: Vec<proxy_pb::Predicate>,
+        predicates: Vec<proxy::Predicate>,
     ) -> anyhow::Result<bool> {
         for p in predicates.iter() {
             let sr = SHARD_RANGE
@@ -324,7 +324,7 @@ impl ProxyServer {
                 .map_err(|x| Status::internal(""))?;
 
             let resp = conn
-                .kv_get(service_pb::KvGetRequest {
+                .kv_get(dataserver::KvGetRequest {
                     txid,
                     shard_id: sr.shard_id,
                     need_lock: true,

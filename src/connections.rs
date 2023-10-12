@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use tonic::transport::Channel;
 
-use idl_gen::service_pb::data_service_client::DataServiceClient;
+use idl_gen::dataserver::data_service_client::DataServiceClient;
 
 pub static CONNS: Lazy<Connections> = Lazy::new(|| Default::default());
 

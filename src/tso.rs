@@ -5,7 +5,7 @@ use arc_swap::ArcSwapOption;
 use once_cell::sync::Lazy;
 use tonic::transport::Channel;
 
-use idl_gen::metaserver_pb::{meta_service_client::MetaServiceClient, AllocateTxIDsRequest};
+use idl_gen::metaserver::{meta_service_client::MetaServiceClient, AllocateTxIDsRequest};
 
 pub static TSO: Lazy<ArcSwapOption<Tso>> = Lazy::new(|| None.into());
 

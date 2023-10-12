@@ -6,7 +6,7 @@ use chrono::prelude::*;
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 
-use idl_gen::metaserver_pb::{meta_service_client::MetaServiceClient, GetShardRoutesRequest};
+use idl_gen::metaserver::{meta_service_client::MetaServiceClient, GetShardRoutesRequest};
 use tonic::transport::Channel;
 
 pub static SHARD_ROUTER: Lazy<ArcSwapOption<ShardRouter>> = Lazy::new(|| None.into());
