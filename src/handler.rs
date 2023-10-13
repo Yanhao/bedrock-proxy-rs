@@ -1,6 +1,9 @@
 use std::pin::Pin;
 
+use async_stream::stream;
 use bytes::Bytes;
+use futures_util::StreamExt;
+use itertools::Itertools;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 
@@ -16,8 +19,6 @@ use crate::shard_range::SHARD_RANGE;
 use crate::shard_route::SHARD_ROUTER;
 use crate::tso::TSO;
 use crate::utils::R;
-
-type KvScanResponseStream = Pin<Box<dyn Stream<Item = Result<KvScanResponse, Status>> + Send>>;
 
 #[derive(Debug, Default)]
 pub struct ProxyServer {}
@@ -157,7 +158,7 @@ impl ProxyService for ProxyServer {
         }))
     }
 
-    type KvScanStream = KvScanResponseStream;
+    type KvScanStream = Pin<Box<dyn Stream<Item = Result<KvScanResponse, Status>> + Send>>;
     async fn kv_scan(
         &self,
         request: Request<KvScanRequest>,
@@ -168,43 +169,57 @@ impl ProxyService for ProxyServer {
             .allocate_txid()
             .await
             .map_err(|_| Status::internal(""))?;
+        let start_key = Bytes::from(request.get_ref().prefix.clone());
+        let limit = request.get_ref().limit;
 
-        let mut start_key = Bytes::from(request.get_ref().prefix.clone());
-        let mut limit = request.get_ref().limit;
+        let stream = stream! {
+            let mut start_key = start_key;
+            let mut limit = limit;
 
-        loop {
-            let sr = SHARD_RANGE
-                .load()
-                .r()
-                .get_shard_range(start_key.clone())
-                .map_err(|_| Status::internal(""))?;
+            while limit > 0 {
+                let sr = SHARD_RANGE
+                    .load()
+                    .r()
+                    .get_shard_range(start_key.clone())
+                    .map_err(|_| Status::internal(""))?;
 
-            let shard = SHARD_ROUTER
-                .load()
-                .r()
-                .get_shard(sr.shard_id)
-                .await
-                .map_err(|_| Status::internal(""))?;
+                let shard = SHARD_ROUTER
+                    .load()
+                    .r()
+                    .get_shard(sr.shard_id)
+                    .await
+                    .map_err(|_| Status::internal(""))?;
 
-            let mut conn = CONNS
-                .get_conn(shard.leader)
-                .await
-                .map_err(|_| Status::internal(""))?;
+                let mut conn = CONNS
+                    .get_conn(shard.leader)
+                    .await
+                    .map_err(|_| Status::internal(""))?;
 
-            let resp = conn
-                .kv_scan(dataserver::KvScanRequest {
-                    txid,
-                    shard_id: shard.shard_id,
-                    prefix: start_key.clone().into(),
-                    limit: 10,
-                })
-                .await
-                .map_err(|_| Status::internal(""))?;
+                let resp = conn
+                    .kv_scan(dataserver::KvScanRequest {
+                        txid,
+                        shard_id: shard.shard_id,
+                        prefix: start_key.clone().into(),
+                        limit: 10,
+                    })
+                    .await
+                    .map_err(|_| Status::internal(""))?
+                    .into_inner();
 
-            resp.into_inner().kvs.len();
+                yield Ok(KvScanResponse {
+                    err: proxy::Error::Ok as i32,
+                    kvs: resp.kvs.iter().map(
+                        |kv| proxy::KeyValue{ key: kv.key.clone(), value: kv.value.clone() },
+                    ).collect_vec(),
+                });
+
+                start_key = resp.kvs.last().unwrap().key.clone().into();
+                limit -= resp.kvs.len() as u32;
+            }
         }
+        .boxed();
 
-        todo!()
+        Ok(Response::new(stream.into()))
     }
 
     async fn batch(
