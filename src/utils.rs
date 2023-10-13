@@ -10,6 +10,7 @@ impl<T> R<T> for Option<T> {
 
 pub(crate) trait A<T> {
     fn s(&self, val: T);
+    // fn l(&self) -> &T;
 }
 
 impl<T> A<T> for arc_swap::ArcSwapOption<T> {

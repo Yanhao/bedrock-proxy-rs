@@ -6,10 +6,11 @@ use bytes::Bytes;
 use chrono::prelude::*;
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
-use tonic::transport::Channel;
 use tracing::info;
 
-use idl_gen::metaserver::{meta_service_client::MetaServiceClient, ScanShardRangeRequest};
+use idl_gen::metaserver::ScanShardRangeRequest;
+
+use crate::ms_client::MS_CLIENT;
 
 pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None.into());
 
@@ -24,16 +25,13 @@ pub struct ShardRange {
 }
 
 pub struct ShardRangeCache {
-    ms_client: MetaServiceClient<Channel>,
     shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
 impl ShardRangeCache {
     pub async fn new() -> Result<Self> {
-        let ms_client = MetaServiceClient::connect("").await?;
         Ok(Self {
-            ms_client,
             shard_ranges: Arc::new(parking_lot::RwLock::new(im::OrdMap::new())),
             stop_ch: None,
         })
@@ -68,35 +66,26 @@ impl ShardRangeCache {
         start: Bytes,
         end: Bytes,
     ) -> Result<()> {
-        Self::update_ranges(
-            storage_id,
-            self.ms_client.clone(),
-            self.shard_ranges.clone(),
-            start,
-            end,
-        )
-        .await?;
+        Self::update_ranges(storage_id, self.shard_ranges.clone(), start, end).await?;
 
         Ok(())
     }
 
     pub async fn update_ranges(
         storage_id: u32,
-        mut ms_client: MetaServiceClient<Channel>,
         shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
         start: Bytes,
         end: Bytes,
     ) -> Result<()> {
         let mut range_start = vec![];
         loop {
-            let resp = ms_client
+            let resp = MS_CLIENT
                 .scan_shard_range(ScanShardRangeRequest {
                     storage_id,
                     range_start: range_start.clone(),
                     range_count: 10,
                 })
-                .await?
-                .into_inner();
+                .await?;
 
             if resp.is_end {
                 break;
@@ -146,8 +135,6 @@ impl ShardRangeCache {
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        let ms_client = MetaServiceClient::connect("").await?;
-
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 
@@ -163,7 +150,7 @@ impl ShardRangeCache {
                         break;
                     }
                     _ = ticker.tick() => {
-                        Self::update_ranges(1, ms_client.clone(), shard_ranges.clone(), Bytes::new(), Bytes::new())
+                        Self::update_ranges(1,  shard_ranges.clone(), Bytes::new(), Bytes::new())
                         .await
                         .unwrap();
                     }

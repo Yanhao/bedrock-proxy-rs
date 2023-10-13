@@ -8,8 +8,9 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 
-use idl_gen::metaserver::{meta_service_client::MetaServiceClient, GetShardRouteRequest};
-use tonic::transport::Channel;
+use idl_gen::metaserver::GetShardRouteRequest;
+
+use crate::ms_client::MS_CLIENT;
 
 pub static SHARD_ROUTER: Lazy<ArcSwapOption<ShardRouter>> = Lazy::new(|| None.into());
 
@@ -34,7 +35,6 @@ pub struct ShardRouter {
     shard_cache: Arc<parking_lot::RwLock<im::HashMap<ShardID, ShardRoute>>>,
 
     sfg: async_singleflight::Group<ShardRoute, anyhow::Error>,
-    ms_client: MetaServiceClient<Channel>,
     expire_duration: chrono::Duration,
 
     stop_ch: Option<mpsc::Sender<()>>,
@@ -42,12 +42,9 @@ pub struct ShardRouter {
 
 impl ShardRouter {
     pub async fn new() -> Result<Self> {
-        let ms_client = MetaServiceClient::connect("").await?;
-
         Ok(Self {
             shard_cache: Arc::new(parking_lot::RwLock::new(im::HashMap::new())),
             sfg: async_singleflight::Group::new(),
-            ms_client,
             expire_duration: chrono::Duration::seconds(5),
             stop_ch: None,
         })
@@ -58,7 +55,6 @@ impl ShardRouter {
             return Ok(shard.clone());
         }
 
-        let mut ms_client = self.ms_client.clone();
         let shard_cache = self.shard_cache.clone();
 
         let (value, err, _owner) = self
@@ -66,7 +62,7 @@ impl ShardRouter {
             .work(
                 &shard_id.to_string(),
                 (|| async move {
-                    let a = ms_client
+                    let a = MS_CLIENT
                         .get_shard_route(GetShardRouteRequest {
                             timestamp: Some(prost_types::Timestamp {
                                 seconds: 0,
@@ -74,8 +70,7 @@ impl ShardRouter {
                             }),
                             shard_ids: vec![],
                         })
-                        .await?
-                        .into_inner();
+                        .await?;
 
                     let shard_record = a.routes.first().unwrap();
                     let shard = ShardRoute {
@@ -105,7 +100,6 @@ impl ShardRouter {
 
     async fn update_expired(
         expire_duration: chrono::Duration,
-        mut ms_client: MetaServiceClient<Channel>,
         shard_cache: Arc<parking_lot::RwLock<im::HashMap<ShardID, ShardRoute>>>,
     ) {
         let cache_copy = shard_cache.read().clone();
@@ -129,7 +123,7 @@ impl ShardRouter {
 
         let ts = Utc::now();
 
-        let Ok(resp) = ms_client
+        let Ok(resp) = MS_CLIENT
             .get_shard_route(GetShardRouteRequest {
                 timestamp: Some(prost_types::Timestamp {
                     seconds: minimum_ts.second() as i64,
@@ -141,7 +135,6 @@ impl ShardRouter {
         else {
             return;
         };
-        let resp = resp.into_inner();
 
         let mut updated_routes = outdated_routes
             .into_iter()
@@ -175,8 +168,6 @@ impl ShardRouter {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 
-        let ms_client = self.ms_client.clone();
-
         let shard_cache = self.shard_cache.clone();
         let expire_duration = self.expire_duration.clone();
 
@@ -192,7 +183,6 @@ impl ShardRouter {
                     _ = ticker.tick() => {
                         Self::update_expired(
                             expire_duration.clone(),
-                            ms_client.clone(),
                             shard_cache.clone()
                         ).await;
                     }

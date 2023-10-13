@@ -6,8 +6,9 @@
 use tracing::info;
 
 pub mod config;
-pub mod connections;
+pub mod ds_client;
 pub mod handler;
+pub mod ms_client;
 pub mod shard_range;
 pub mod shard_route;
 pub mod tso;
@@ -31,7 +32,7 @@ pub async fn start_background_tasks() {
         shard_ranger
     });
 
-    tso::TSO.s(tso::Tso::new().await.unwrap());
+    tso::TSO.s(tso::Tso::new());
 
     info!("background tasks start finished");
 }
