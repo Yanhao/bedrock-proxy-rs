@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs::read_to_string, path::Path};
 
 use anyhow::Result;
 use once_cell::sync::Lazy;
@@ -16,8 +16,12 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    pub fn parse_config_file(_file: &Path) -> Result<Configuration> {
-        todo!()
+    pub fn parse_config_file(file: &Path) -> Result<Configuration> {
+        info!("parsing configuration file: {}", file.to_str().unwrap());
+
+        let file_contents = read_to_string(file)?;
+
+        Ok(toml::from_str(&file_contents)?)
     }
 
     fn validate(&self) -> Result<()> {

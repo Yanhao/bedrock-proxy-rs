@@ -32,6 +32,7 @@ async_singleflight = "0.5"
 dashmap = "5"
 itertools = "0.11"
 bytes = "1"
+toml = "0.8"
 
 idl-gen = { path = "./idl-gen" }
 
