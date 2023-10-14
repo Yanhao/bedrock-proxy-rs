@@ -10,7 +10,7 @@ use tracing::info;
 
 use idl_gen::metaserver::ScanShardRangeRequest;
 
-use crate::ms_client::MS_CLIENT;
+use crate::ms_client::get_ms_client;
 
 pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None.into());
 
@@ -79,7 +79,8 @@ impl ShardRangeCache {
     ) -> Result<()> {
         let mut range_start = vec![];
         loop {
-            let resp = MS_CLIENT
+            let resp = get_ms_client()
+                .await
                 .scan_shard_range(ScanShardRangeRequest {
                     storage_id,
                     range_start: range_start.clone(),

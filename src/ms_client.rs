@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use arc_swap::ArcSwapOption;
-use once_cell::sync::Lazy;
+use tokio::sync::OnceCell;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tonic::transport::Channel;
 
@@ -16,7 +16,17 @@ use idl_gen::metaserver::{
     ScanShardRangeResponse,
 };
 
-pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(|| MsClient::new());
+static MS_CLIENT: OnceCell<MsClient> = OnceCell::const_new();
+pub async fn get_ms_client() -> &'static MsClient {
+    MS_CLIENT
+        .get_or_init(|| async {
+            let mut ms_client = MsClient::new();
+            ms_client.start().await.unwrap();
+
+            ms_client
+        })
+        .await
+}
 
 pub struct MsClient {
     leader_conn: Arc<ArcSwapOption<(SocketAddr, MetaServiceClient<Channel>)>>,

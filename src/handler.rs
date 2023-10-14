@@ -14,7 +14,7 @@ use idl_gen::proxy::{
     KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, PredicateOp,
 };
 
-use crate::ds_client::DS_CLIENT;
+use crate::ds_client::get_ds_client;
 use crate::shard_range::SHARD_RANGE;
 use crate::shard_route::SHARD_ROUTER;
 use crate::tso::TSO;
@@ -49,7 +49,8 @@ impl ProxyService for ProxyServer {
             .await
             .map_err(|_| Status::internal(""))?;
 
-        let _ = DS_CLIENT
+        let _ = get_ds_client()
+            .await
             .kv_set(
                 &shard.leader,
                 dataserver::KvSetRequest {
@@ -91,7 +92,8 @@ impl ProxyService for ProxyServer {
             .await
             .map_err(|_| Status::internal(""))?;
 
-        let resp = DS_CLIENT
+        let resp = get_ds_client()
+            .await
             .kv_get(
                 &shard.leader,
                 dataserver::KvGetRequest {
@@ -135,7 +137,8 @@ impl ProxyService for ProxyServer {
             .await
             .map_err(|_| Status::internal(""))?;
 
-        let _ = DS_CLIENT
+        let _ = get_ds_client()
+            .await
             .kv_del(
                 &shard.leader,
                 dataserver::KvDelRequest {
@@ -184,7 +187,7 @@ impl ProxyService for ProxyServer {
                     .await
                     .map_err(|_| Status::internal(""))?;
 
-                let resp = DS_CLIENT.kv_scan(
+                let resp = get_ds_client().await.kv_scan(
                     &shard.leader,
                     dataserver::KvScanRequest {
                         txid,
@@ -250,7 +253,8 @@ impl ProxyService for ProxyServer {
                 .await
                 .map_err(|_| Status::internal(""))?;
 
-            let _ = DS_CLIENT
+            let _ = get_ds_client()
+                .await
                 .prepare_tx(
                     &shard.leader,
                     dataserver::PrepareTxRequest {
@@ -281,7 +285,8 @@ impl ProxyService for ProxyServer {
                 .await
                 .map_err(|_| Status::internal(""))?;
 
-            let _ = DS_CLIENT
+            let _ = get_ds_client()
+                .await
                 .commit_tx(
                     &shard.leader,
                     dataserver::CommitTxRequest {
@@ -319,7 +324,8 @@ impl ProxyServer {
                 .await
                 .map_err(|_| Status::internal(""))?;
 
-            let resp = DS_CLIENT
+            let resp = get_ds_client()
+                .await
                 .kv_get(
                     &shard.leader,
                     dataserver::KvGetRequest {

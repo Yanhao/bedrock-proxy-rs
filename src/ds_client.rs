@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chrono::prelude::*;
-use once_cell::sync::Lazy;
+use tokio::sync::OnceCell;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tonic::transport::Channel;
 
@@ -16,7 +16,17 @@ use idl_gen::{
     },
 };
 
-pub static DS_CLIENT: Lazy<DsClient> = Lazy::new(|| DsClient::new());
+static DS_CLIENT: OnceCell<DsClient> = OnceCell::const_new();
+pub async fn get_ds_client() -> &'static DsClient {
+    DS_CLIENT
+        .get_or_init(|| async {
+            let mut ds_client = DsClient::new();
+            ds_client.start().await.unwrap();
+
+            ds_client
+        })
+        .await
+}
 
 #[derive(Clone)]
 struct ClientWrapper {

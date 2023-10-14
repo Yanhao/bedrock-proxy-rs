@@ -10,7 +10,7 @@ use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 
 use idl_gen::metaserver::GetShardRouteRequest;
 
-use crate::ms_client::MS_CLIENT;
+use crate::ms_client::get_ms_client;
 
 pub static SHARD_ROUTER: Lazy<ArcSwapOption<ShardRouter>> = Lazy::new(|| None.into());
 
@@ -62,7 +62,8 @@ impl ShardRouter {
             .work(
                 &shard_id.to_string(),
                 (|| async move {
-                    let a = MS_CLIENT
+                    let a = get_ms_client()
+                        .await
                         .get_shard_route(GetShardRouteRequest {
                             timestamp: Some(prost_types::Timestamp {
                                 seconds: 0,
@@ -123,7 +124,8 @@ impl ShardRouter {
 
         let ts = Utc::now();
 
-        let Ok(resp) = MS_CLIENT
+        let Ok(resp) = get_ms_client()
+            .await
             .get_shard_route(GetShardRouteRequest {
                 timestamp: Some(prost_types::Timestamp {
                     seconds: minimum_ts.second() as i64,

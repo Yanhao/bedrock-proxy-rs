@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 
 use idl_gen::metaserver::AllocateTxidsRequest;
 
-use crate::ms_client::MS_CLIENT;
+use crate::ms_client::get_ms_client;
 
 pub static TSO: Lazy<ArcSwapOption<Tso>> = Lazy::new(|| None.into());
 
@@ -33,7 +33,8 @@ impl Tso {
             return Ok(self.current.fetch_add(1, atomic::Ordering::Relaxed) + 1);
         }
 
-        let resp = MS_CLIENT
+        let resp = get_ms_client()
+            .await
             .allocate_txids(AllocateTxidsRequest { count: 10000 })
             .await?;
 
