@@ -16,8 +16,8 @@ use idl_gen::proxy::{
 
 use crate::ds_client::get_ds_client;
 use crate::shard_range::SHARD_RANGE;
-use crate::shard_route::SHARD_ROUTER;
-use crate::tso::TSO;
+use crate::shard_route::{ShardRoute, SHARD_ROUTER};
+use crate::tso::Tso;
 use crate::utils::R;
 
 #[derive(Debug, Default)]
@@ -29,25 +29,12 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvSetRequest>,
     ) -> Result<Response<KvSetResponse>, Status> {
-        let txid = TSO
-            .load()
-            .r()
-            .allocate_txid()
-            .await
-            .map_err(|_| Status::internal(""))?;
+        let request = request.into_inner();
+        let txid = Tso::alloc_txid().await?;
 
-        let sr = SHARD_RANGE
-            .load()
-            .r()
-            .get_shard_range(Bytes::from(request.get_ref().key.clone()))
-            .map_err(|_| Status::internal(""))?;
-
-        let shard = SHARD_ROUTER
-            .load()
-            .r()
-            .get_shard(sr.shard_id)
+        let shard = Self::shard_route(request.storage_id, request.key.clone().into())
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|_| Status::internal("get shard route failed"))?;
 
         let _ = get_ds_client()
             .await
@@ -56,12 +43,12 @@ impl ProxyService for ProxyServer {
                 dataserver::KvSetRequest {
                     txid,
                     shard_id: shard.shard_id,
-                    key: request.get_ref().key.clone(),
-                    value: request.get_ref().value.clone(),
+                    key: request.key,
+                    value: request.value,
                 },
             )
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|e| Status::internal(format!("err: {e}")))?;
 
         Ok(Response::new(KvSetResponse {
             err: proxy::Error::Ok as i32,
@@ -72,25 +59,12 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvGetRequest>,
     ) -> Result<Response<KvGetResponse>, Status> {
-        let txid = TSO
-            .load()
-            .r()
-            .allocate_txid()
-            .await
-            .map_err(|_| Status::internal(""))?;
+        let request = request.into_inner();
+        let txid = Tso::alloc_txid().await?;
 
-        let sr = SHARD_RANGE
-            .load()
-            .r()
-            .get_shard_range(Bytes::from(request.get_ref().key.clone()))
-            .map_err(|_| Status::internal(""))?;
-
-        let shard = SHARD_ROUTER
-            .load()
-            .r()
-            .get_shard(sr.shard_id)
+        let shard = Self::shard_route(request.storage_id, request.key.clone().into())
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|_| Status::internal("get shard route failed"))?;
 
         let resp = get_ds_client()
             .await
@@ -99,13 +73,13 @@ impl ProxyService for ProxyServer {
                 dataserver::KvGetRequest {
                     txid,
                     shard_id: shard.shard_id,
-                    key: request.get_ref().key.clone(),
+                    key: request.key,
                     need_lock: false,
                     need_unlock: false,
                 },
             )
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|e| Status::internal(format!("err: {e}")))?;
 
         Ok(Response::new(KvGetResponse {
             value: resp.value,
@@ -117,25 +91,12 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvDeleteRequest>,
     ) -> Result<Response<KvDeleteResponse>, Status> {
-        let txid = TSO
-            .load()
-            .r()
-            .allocate_txid()
-            .await
-            .map_err(|_| Status::internal(""))?;
+        let request = request.into_inner();
+        let txid = Tso::alloc_txid().await?;
 
-        let sr = SHARD_RANGE
-            .load()
-            .r()
-            .get_shard_range(Bytes::from(request.get_ref().key.clone()))
-            .map_err(|_| Status::internal(""))?;
-
-        let shard = SHARD_ROUTER
-            .load()
-            .r()
-            .get_shard(sr.shard_id)
+        let shard = Self::shard_route(request.storage_id, request.key.clone().into())
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|_| Status::internal("get shard route failed"))?;
 
         let _ = get_ds_client()
             .await
@@ -144,11 +105,11 @@ impl ProxyService for ProxyServer {
                 dataserver::KvDelRequest {
                     txid,
                     shard_id: shard.shard_id,
-                    key: request.get_ref().key.clone(),
+                    key: request.key,
                 },
             )
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|e| Status::internal(format!("err: {e}")))?;
 
         Ok(Response::new(KvDeleteResponse {
             err: proxy::Error::Ok as i32,
@@ -160,32 +121,18 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvScanRequest>,
     ) -> Result<Response<Self::KvScanStream>, Status> {
-        let txid = TSO
-            .load()
-            .r()
-            .allocate_txid()
-            .await
-            .map_err(|_| Status::internal(""))?;
-        let start_key = Bytes::from(request.get_ref().prefix.clone());
-        let limit = request.get_ref().limit;
+        let request = request.into_inner();
+        let txid = Tso::alloc_txid().await?;
+
+        let (start_key, limit) = (Bytes::from(request.prefix.clone()), request.limit);
 
         let stream = stream! {
-            let mut start_key = start_key;
-            let mut limit = limit;
+            let (mut start_key, mut limit) = (start_key, limit);
 
             while limit > 0 {
-                let sr = SHARD_RANGE
-                    .load()
-                    .r()
-                    .get_shard_range(start_key.clone())
-                    .map_err(|_| Status::internal(""))?;
-
-                let shard = SHARD_ROUTER
-                    .load()
-                    .r()
-                    .get_shard(sr.shard_id)
-                    .await
-                    .map_err(|_| Status::internal(""))?;
+                let shard = Self::shard_route(request.storage_id, start_key.clone())
+                .await
+                .map_err(|_| Status::internal("get shard route failed"))?;
 
                 let resp = get_ds_client().await.kv_scan(
                     &shard.leader,
@@ -193,11 +140,15 @@ impl ProxyService for ProxyServer {
                         txid,
                         shard_id: shard.shard_id,
                         prefix: start_key.clone().into(),
-                        limit: 10,
+                        limit: 128, // TODO: default count, need to be configurable
                     }
                 )
                 .await
-                .map_err(|_| Status::internal(""))?;
+                .map_err(|_| Status::internal("get shard route failed"))?;
+
+                if resp.kvs.is_empty() {
+                    break;
+                }
 
                 yield Ok(KvScanResponse {
                     err: proxy::Error::Ok as i32,
@@ -219,39 +170,23 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<BatchRequest>,
     ) -> Result<Response<BatchResponse>, Status> {
-        let txid = TSO
-            .load()
-            .r()
-            .allocate_txid()
-            .await
-            .map_err(|_| Status::internal(""))?;
-
-        let predicates = request.get_ref().predicates.clone();
+        let request = request.into_inner();
+        let txid = Tso::alloc_txid().await?;
 
         if !self
-            .check_predicates(txid, predicates)
+            .check_predicates(request.storage_id, txid, request.predicates)
             .await
-            .map_err(|_| Status::internal(""))?
+            .map_err(|e| Status::internal(format!("err: {e}")))?
         {
             return Ok(Response::new(BatchResponse {
                 err: proxy::Error::Ok as i32,
             }));
         }
 
-        let kvs = request.get_ref().kvs.clone();
-        for kv in kvs.iter() {
-            let sr = SHARD_RANGE
-                .load()
-                .r()
-                .get_shard_range(Bytes::from(kv.key.clone()))
-                .map_err(|_| Status::internal(""))?;
-
-            let shard = SHARD_ROUTER
-                .load()
-                .r()
-                .get_shard(sr.shard_id)
+        for kv in request.kvs.iter() {
+            let shard = Self::shard_route(request.storage_id, kv.key.clone().into())
                 .await
-                .map_err(|_| Status::internal(""))?;
+                .map_err(|_| Status::internal("get shard route failed"))?;
 
             let _ = get_ds_client()
                 .await
@@ -259,7 +194,7 @@ impl ProxyService for ProxyServer {
                     &shard.leader,
                     dataserver::PrepareTxRequest {
                         txid,
-                        shard_id: sr.shard_id,
+                        shard_id: shard.shard_id,
                         kvs: vec![dataserver::KeyValue {
                             key: kv.key.clone(),
                             value: kv.value.clone(),
@@ -271,19 +206,10 @@ impl ProxyService for ProxyServer {
                 .map_err(|_| Status::internal(""))?;
         }
 
-        for kv in kvs.iter() {
-            let sr = SHARD_RANGE
-                .load()
-                .r()
-                .get_shard_range(Bytes::from(kv.key.clone()))
-                .map_err(|_| Status::internal(""))?;
-
-            let shard = SHARD_ROUTER
-                .load()
-                .r()
-                .get_shard(sr.shard_id)
+        for kv in request.kvs.into_iter() {
+            let shard = Self::shard_route(request.storage_id, kv.key.into())
                 .await
-                .map_err(|_| Status::internal(""))?;
+                .map_err(|_| Status::internal("get shard route failed"))?;
 
             let _ = get_ds_client()
                 .await
@@ -291,11 +217,11 @@ impl ProxyService for ProxyServer {
                     &shard.leader,
                     dataserver::CommitTxRequest {
                         txid,
-                        shard_id: sr.shard_id,
+                        shard_id: shard.shard_id,
                     },
                 )
                 .await
-                .map_err(|_| Status::internal(""))?;
+                .map_err(|e| Status::internal(format!("err: {e}")))?;
         }
 
         Ok(Response::new(BatchResponse {
@@ -307,37 +233,25 @@ impl ProxyService for ProxyServer {
 impl ProxyServer {
     async fn check_predicates(
         &self,
+        storage_id: u32,
         txid: u64,
         predicates: Vec<proxy::Predicate>,
     ) -> anyhow::Result<bool> {
-        for p in predicates.iter() {
-            let sr = SHARD_RANGE
-                .load()
-                .r()
-                .get_shard_range(Bytes::from(p.key.clone()))
-                .map_err(|_| Status::internal(""))?;
-
-            let shard = SHARD_ROUTER
-                .load()
-                .r()
-                .get_shard(sr.shard_id)
-                .await
-                .map_err(|_| Status::internal(""))?;
-
+        for p in predicates.into_iter() {
+            let shard = Self::shard_route(storage_id, p.key.clone().into()).await?;
             let resp = get_ds_client()
                 .await
                 .kv_get(
                     &shard.leader,
                     dataserver::KvGetRequest {
                         txid,
-                        shard_id: sr.shard_id,
+                        shard_id: shard.shard_id,
                         need_lock: true,
                         need_unlock: false,
-                        key: p.key.clone(),
+                        key: p.key,
                     },
                 )
-                .await
-                .map_err(|_| Status::internal(""))?;
+                .await?;
 
             let result = match PredicateOp::from(OpI32(p.op)) {
                 PredicateOp::Equal => p.value == resp.value,
@@ -350,6 +264,11 @@ impl ProxyServer {
         }
 
         Ok(true)
+    }
+
+    async fn shard_route(_storage_id: u32, key: Bytes) -> anyhow::Result<ShardRoute> {
+        let sr = SHARD_RANGE.load().r().get_shard_range(key)?;
+        Ok(SHARD_ROUTER.load().r().get_shard(sr.shard_id).await?)
     }
 }
 

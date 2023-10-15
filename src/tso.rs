@@ -1,12 +1,13 @@
 use std::sync::atomic;
 
 use anyhow::Result;
-use arc_swap::ArcSwapOption;
+use arc_swap::{access::Access, ArcSwapOption};
 use once_cell::sync::Lazy;
 
 use idl_gen::metaserver::AllocateTxidsRequest;
+use tonic::Status;
 
-use crate::ms_client::get_ms_client;
+use crate::{ms_client::get_ms_client, utils::R};
 
 pub static TSO: Lazy<ArcSwapOption<Tso>> = Lazy::new(|| None.into());
 
@@ -25,7 +26,16 @@ impl Tso {
         }
     }
 
-    pub async fn allocate_txid(&self) -> Result<u64> {
+    pub async fn alloc_txid() -> std::result::Result<u64, tonic::Status> {
+        Ok(TSO
+            .load()
+            .r()
+            .do_allocate_txid()
+            .await
+            .map_err(|_| Status::internal(""))?)
+    }
+
+    async fn do_allocate_txid(&self) -> Result<u64> {
         let _guard = self.mtx.lock().await;
 
         if self.current.load(atomic::Ordering::Relaxed) < self.limit.load(atomic::Ordering::Relaxed)
