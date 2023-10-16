@@ -13,6 +13,7 @@ pub static CONFIG: Lazy<parking_lot::RwLock<Configuration>> = Lazy::new(Default:
 pub struct Configuration {
     pub rpc_server_addr: Option<String>,
     pub work_dir: Option<String>,
+    pub metaserver_url: String,
 }
 
 impl Configuration {

@@ -2,6 +2,7 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
+#![feature(pattern)]
 
 use tracing::info;
 
