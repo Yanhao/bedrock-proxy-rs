@@ -99,12 +99,19 @@ impl MsClient {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 
+        {
+            let ms_addr = config::get_config().metaserver_url.clone();
+            let conn = MetaServiceClient::connect(ms_addr.clone()).await?;
+            self.leader_conn.s((ms_addr, conn));
+        }
+
         let leader_conn = self.leader_conn.clone();
         let follower_conns = self.follower_conns.clone();
 
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // make sure ms_client init successful first
 
             loop {
                 select! {

@@ -74,8 +74,8 @@ impl ShardRangeCache {
     pub async fn update_ranges(
         storage_id: u32,
         shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
-        start: Bytes,
-        end: Bytes,
+        _start: Bytes,
+        _end: Bytes,
     ) -> Result<()> {
         let mut range_start = vec![];
         loop {
@@ -104,13 +104,16 @@ impl ShardRangeCache {
                     .range(first_key.clone()..last_key.clone())
                     .map(|(range_start, _)| range_start.clone())
                     .collect::<Vec<_>>();
-
-                if first_key != *(r.first().unwrap()) {
-                    if let Some((range_start, _)) = ranges_copy.get_prev(&first_key) {
-                        r.insert(0, range_start.clone());
+                if r.is_empty() {
+                    vec![]
+                } else {
+                    if first_key != *(r.first().unwrap()) {
+                        if let Some((range_start, _)) = ranges_copy.get_prev(&first_key) {
+                            r.insert(0, range_start.clone());
+                        }
                     }
+                    r
                 }
-                r
             };
 
             for range_key in ranges_to_remove.iter() {
@@ -144,6 +147,7 @@ impl ShardRangeCache {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // make sure ms_client init successful first
 
             loop {
                 select! {

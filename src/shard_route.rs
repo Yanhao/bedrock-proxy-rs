@@ -16,7 +16,7 @@ pub static SHARD_ROUTER: Lazy<ArcSwapOption<ShardRouter>> = Lazy::new(|| None.in
 
 type ShardID = u64;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShardRoute {
     pub(crate) shard_id: ShardID,
     #[allow(unused)]
@@ -69,7 +69,7 @@ impl ShardRouter {
                                 seconds: 0,
                                 nanos: 0,
                             }),
-                            shard_ids: vec![],
+                            shard_ids: vec![shard_id],
                         })
                         .await?;
 
@@ -115,7 +115,7 @@ impl ShardRouter {
             .iter()
             .map(|(_, r)| r.updated_at)
             .min()
-            .unwrap();
+            .unwrap_or(DateTime::from_timestamp(0, 0).unwrap());
 
         let shard_ids = outdated_routes
             .iter()
@@ -176,6 +176,7 @@ impl ShardRouter {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // make sure ms_client init successful first
 
             loop {
                 select! {

@@ -12,6 +12,7 @@ use idl_gen::proxy::proxy_service_server::ProxyServiceServer;
 use bedrock_proxy_rs::{
     config::{self, DEFAULT_CONFIG_FILE},
     handler::ProxyServer,
+    start_background_tasks,
 };
 
 #[derive(Parser, Debug)]
@@ -28,6 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     config::init_config(args.config).inspect_err(|e| error!("init config failed, err: {e}"))?;
+
+    start_background_tasks().await;
 
     let grpc_server =
         GrpcServer::builder().add_service(ProxyServiceServer::new(ProxyServer::default()));

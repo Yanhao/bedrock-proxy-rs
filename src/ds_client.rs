@@ -103,7 +103,8 @@ impl DsClient {
             return Ok(cli.ds_client.clone());
         }
 
-        let cli = DataServiceClient::connect(addr.to_string()).await?;
+        let url = format!("http://{}", addr.to_string());
+        let cli = DataServiceClient::connect(url).await?;
 
         g.insert(
             addr.clone(),

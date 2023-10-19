@@ -13,6 +13,7 @@ use idl_gen::proxy::{
     self, BatchRequest, BatchResponse, KvDeleteRequest, KvDeleteResponse, KvGetRequest,
     KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, PredicateOp,
 };
+use tracing::info;
 
 use crate::ds_client::get_ds_client;
 use crate::shard_range::SHARD_RANGE;
@@ -34,7 +35,9 @@ impl ProxyService for ProxyServer {
 
         let shard = Self::shard_route(request.storage_id, request.key.clone().into())
             .await
-            .map_err(|_| Status::internal("get shard route failed"))?;
+            .map_err(|e| Status::internal(format!("get shard route failed, err: {e}")))?;
+
+        info!("shard {shard:?}");
 
         let _ = get_ds_client()
             .await

@@ -32,7 +32,7 @@ impl Tso {
             .r()
             .do_allocate_txid()
             .await
-            .map_err(|_| Status::internal(""))?)
+            .map_err(|e| Status::internal(format!("allcoate txid failed, err: {e}")))?)
     }
 
     async fn do_allocate_txid(&self) -> Result<u64> {
