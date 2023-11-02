@@ -269,7 +269,7 @@ impl ProxyServer {
     }
 
     async fn shard_route(_storage_id: u32, key: Bytes) -> anyhow::Result<ShardRange> {
-        Ok(SHARD_RANGE.load().r().get_shard_range(key)?)
+        Ok(SHARD_RANGE.load().r().get_shard_range(key, false).await?)
     }
 }
 

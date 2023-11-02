@@ -14,6 +14,8 @@ use crate::{config::get_config, ms_client::get_ms_client};
 
 pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None.into());
 
+pub const MAX_KEY: [u8; 128] = [0xff; 128];
+
 #[derive(Debug, Clone)]
 pub struct ShardRange {
     pub(crate) shard_id: u64,
@@ -40,7 +42,16 @@ impl ShardRangeCache {
         })
     }
 
-    pub fn get_shard_range(&self, key: Bytes) -> Result<ShardRange> {
+    pub async fn get_shard_range(&self, key: Bytes, sync: bool) -> Result<ShardRange> {
+        if sync {
+            self.update_partial_ranges(
+                key.clone(),
+                Bytes::from(MAX_KEY.to_vec()),
+                Some(get_config().update_range_count),
+            )
+            .await?;
+        }
+
         let guard = self.shard_ranges.read();
         let (_, sr) = guard
             .get_prev(key.as_ref())
@@ -63,8 +74,13 @@ impl ShardRangeCache {
         Ok(r)
     }
 
-    pub async fn update_partial_ranges(&self, start: Bytes, end: Bytes) -> Result<()> {
-        Self::update_ranges(self.shard_ranges.clone(), start, end).await?;
+    pub async fn update_partial_ranges(
+        &self,
+        start: Bytes,
+        end: Bytes,
+        max_count: Option<u32>,
+    ) -> Result<()> {
+        Self::update_ranges(self.shard_ranges.clone(), start, end, max_count).await?;
 
         Ok(())
     }
@@ -73,8 +89,11 @@ impl ShardRangeCache {
         shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
         range_start: Bytes,
         range_end: Bytes,
+        max_count: Option<u32>,
     ) -> Result<()> {
         let mut range_start: Vec<u8> = range_start.into();
+
+        let (max_count, mut count) = (max_count.unwrap_or(std::u32::MAX), 0);
 
         loop {
             let resp = get_ms_client()
@@ -141,6 +160,11 @@ impl ShardRangeCache {
             if range_start >= range_end {
                 break;
             }
+
+            count += get_config().update_range_count;
+            if count >= max_count {
+                break;
+            }
         }
 
         Ok(())
@@ -163,7 +187,7 @@ impl ShardRangeCache {
                         break;
                     }
                     _ = ticker.tick() => {
-                        Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new())
+                        Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new(), None)
                         .await
                         .unwrap();
                     }
