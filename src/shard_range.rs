@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
@@ -10,18 +10,21 @@ use tracing::info;
 
 use idl_gen::metaserver::ScanShardRangeRequest;
 
-use crate::ms_client::get_ms_client;
+use crate::{config::get_config, ms_client::get_ms_client};
 
 pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None.into());
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ShardRange {
     pub(crate) shard_id: u64,
     range_start: Vec<u8>,
     #[allow(dead_code)]
     range_end: Vec<u8>,
     #[allow(dead_code)]
-    update_time: DateTime<Utc>,
+    pub(crate) replicates: Vec<SocketAddr>,
+    pub(crate) leader: SocketAddr,
+    #[allow(dead_code)]
+    update_at: DateTime<Utc>,
 }
 
 pub struct ShardRangeCache {
@@ -60,31 +63,26 @@ impl ShardRangeCache {
         Ok(r)
     }
 
-    pub async fn update_partial_ranges(
-        &self,
-        storage_id: u32,
-        start: Bytes,
-        end: Bytes,
-    ) -> Result<()> {
-        Self::update_ranges(storage_id, self.shard_ranges.clone(), start, end).await?;
+    pub async fn update_partial_ranges(&self, start: Bytes, end: Bytes) -> Result<()> {
+        Self::update_ranges(self.shard_ranges.clone(), start, end).await?;
 
         Ok(())
     }
 
-    pub async fn update_ranges(
-        storage_id: u32,
+    async fn update_ranges(
         shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardRange>>>,
-        _start: Bytes,
-        _end: Bytes,
+        range_start: Bytes,
+        range_end: Bytes,
     ) -> Result<()> {
-        let mut range_start = vec![];
+        let mut range_start: Vec<u8> = range_start.into();
+
         loop {
             let resp = get_ms_client()
                 .await
                 .scan_shard_range(ScanShardRangeRequest {
-                    storage_id,
+                    storage_id: get_config().storage_id,
                     range_start: range_start.clone(),
-                    range_count: 10,
+                    range_count: get_config().update_range_count,
                 })
                 .await?;
 
@@ -127,12 +125,22 @@ impl ShardRangeCache {
                         shard_id: sr.shard_id,
                         range_start: sr.range_start.clone(),
                         range_end: sr.range_end.clone(),
-                        update_time: Utc::now(),
+                        leader: sr.leader_addr.parse().unwrap(),
+                        replicates: sr
+                            .addrs
+                            .iter()
+                            .map(|x| x.parse().unwrap())
+                            .collect::<Vec<_>>(),
+                        update_at: Utc::now(),
                     },
                 );
             }
 
             range_start = last_key.into();
+
+            if range_start >= range_end {
+                break;
+            }
         }
 
         Ok(())
@@ -155,7 +163,7 @@ impl ShardRangeCache {
                         break;
                     }
                     _ = ticker.tick() => {
-                        Self::update_ranges(1,  shard_ranges.clone(), Bytes::new(), Bytes::new())
+                        Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new())
                         .await
                         .unwrap();
                     }

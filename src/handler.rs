@@ -16,8 +16,7 @@ use idl_gen::proxy::{
 use tracing::info;
 
 use crate::ds_client::get_ds_client;
-use crate::shard_range::SHARD_RANGE;
-use crate::shard_route::{ShardRoute, SHARD_ROUTER};
+use crate::shard_range::{ShardRange, SHARD_RANGE};
 use crate::tso::Tso;
 use crate::utils::R;
 
@@ -269,9 +268,8 @@ impl ProxyServer {
         Ok(true)
     }
 
-    async fn shard_route(_storage_id: u32, key: Bytes) -> anyhow::Result<ShardRoute> {
-        let sr = SHARD_RANGE.load().r().get_shard_range(key)?;
-        Ok(SHARD_ROUTER.load().r().get_shard(sr.shard_id).await?)
+    async fn shard_route(_storage_id: u32, key: Bytes) -> anyhow::Result<ShardRange> {
+        Ok(SHARD_RANGE.load().r().get_shard_range(key)?)
     }
 }
 

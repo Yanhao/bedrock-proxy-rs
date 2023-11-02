@@ -14,6 +14,8 @@ pub struct Configuration {
     pub rpc_server_addr: Option<String>,
     pub work_dir: Option<String>,
     pub metaserver_url: String,
+    pub storage_id: u32,
+    pub update_range_count: u32,
 }
 
 impl Configuration {
