@@ -13,11 +13,11 @@ use crate::utils::{A, R};
 
 use idl_gen::metaserver::{
     meta_service_client::MetaServiceClient, AllocateTxidsRequest, AllocateTxidsResponse,
-    GetShardRouteRequest, GetShardRouteResponse, InfoRequest, ScanShardRangeRequest,
-    ScanShardRangeResponse,
+    InfoRequest, ScanShardRangeRequest, ScanShardRangeResponse,
 };
 
 static MS_CLIENT: OnceCell<MsClient> = OnceCell::const_new();
+
 pub async fn get_ms_client() -> &'static MsClient {
     MS_CLIENT
         .get_or_init(|| async {
@@ -145,15 +145,6 @@ impl MsClient {
         let (_, mut cli) = (*self.leader_conn.load().r().clone()).clone();
 
         Ok(cli.scan_shard_range(req).await?.into_inner())
-    }
-
-    pub async fn get_shard_route(
-        &self,
-        req: GetShardRouteRequest,
-    ) -> Result<GetShardRouteResponse> {
-        let (_, mut cli) = (*self.leader_conn.load().r().clone()).clone();
-
-        Ok(cli.get_shard_route(req).await?.into_inner())
     }
 
     pub async fn allocate_txids(&self, req: AllocateTxidsRequest) -> Result<AllocateTxidsResponse> {
