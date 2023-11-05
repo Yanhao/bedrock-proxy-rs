@@ -48,7 +48,7 @@ impl Tso {
             .allocate_txids(AllocateTxidsRequest { count: 10000 })
             .await?;
 
-        let limit = *resp.txids.last().unwrap();
+        let limit = resp.txid_range_end;
         self.limit.store(limit, atomic::Ordering::Relaxed);
 
         Ok(self.current.fetch_add(1, atomic::Ordering::Relaxed) + 1)
