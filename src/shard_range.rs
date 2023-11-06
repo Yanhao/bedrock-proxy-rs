@@ -6,7 +6,7 @@ use bytes::Bytes;
 use chrono::prelude::*;
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
-use tracing::info;
+use tracing::{error, info};
 
 use idl_gen::metaserver::ScanShardRangeRequest;
 
@@ -187,9 +187,8 @@ impl ShardRangeCache {
                         break;
                     }
                     _ = ticker.tick() => {
-                        Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new(), None)
-                        .await
-                        .unwrap();
+                        let _ = Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new(), None)
+                            .await.inspect_err(|e| error!("update range failed, err: {e}"));
                     }
                 }
             }
