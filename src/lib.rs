@@ -23,8 +23,10 @@ pub async fn start_background_tasks() {
         shard_ranger.start().await.unwrap();
         shard_ranger
     });
+    info!("shard ranger started");
 
     tso::TSO.s(tso::Tso::new());
+    info!("tso alloctor inited");
 
     info!("background tasks start finished");
 }

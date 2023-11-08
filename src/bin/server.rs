@@ -1,6 +1,6 @@
 #![feature(result_option_inspect)]
 
-use std::fs;
+use std::{fs, path::Path};
 
 use clap::Parser;
 use tokio::signal;
@@ -10,7 +10,7 @@ use tracing::{error, info};
 use idl_gen::proxy::proxy_service_server::ProxyServiceServer;
 
 use bedrock_proxy_rs::{
-    config::{self, DEFAULT_CONFIG_FILE},
+    config::{self, get_config, DEFAULT_CONFIG_FILE},
     handler::ProxyServer,
     start_background_tasks,
 };
@@ -29,6 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     config::init_config(args.config).inspect_err(|e| error!("init config failed, err: {e}"))?;
+
+    create_lock_file(get_config().work_dir.unwrap_or(String::from(".")))
+        .inspect_err(|e| error!("failed to create lock file, err: {e}"))?;
 
     start_background_tasks().await;
 
@@ -54,6 +57,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )) {
         error!("failed to remove lock file, err {}", e);
     }
+
+    Ok(())
+}
+
+fn create_lock_file(path: impl AsRef<Path>) -> anyhow::Result<()> {
+    let lock_path = path.as_ref().to_path_buf().join("LOCK");
+    info!("create lock file: {:?}", lock_path);
+
+    std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(lock_path)?;
 
     Ok(())
 }

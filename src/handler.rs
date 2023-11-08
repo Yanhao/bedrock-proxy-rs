@@ -36,7 +36,7 @@ impl ProxyService for ProxyServer {
             .await
             .map_err(|e| Status::internal(format!("get shard route failed, err: {e}")))?;
 
-        info!("shard {shard:?}");
+        info!("{shard:?}");
 
         let _ = get_ds_client()
             .await
@@ -67,6 +67,8 @@ impl ProxyService for ProxyServer {
         let shard = Self::shard_route(request.storage_id, request.key.clone().into())
             .await
             .map_err(|_| Status::internal("get shard route failed"))?;
+
+        info!("{shard:?}");
 
         let resp = get_ds_client()
             .await

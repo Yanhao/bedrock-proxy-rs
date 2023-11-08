@@ -40,7 +40,7 @@ pub fn init_config(config_file: impl AsRef<Path>) -> Result<()> {
 
     *CONFIG.write() = conf;
 
-    info!("successfully initialized config module");
+    info!("successfully initialize configuration");
     debug!("configuration: {:?}", *CONFIG.read());
 
     Ok(())

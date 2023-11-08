@@ -6,7 +6,7 @@ use bytes::Bytes;
 use chrono::prelude::*;
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use idl_gen::metaserver::ScanShardRangeRequest;
 
@@ -16,17 +16,33 @@ pub static SHARD_RANGE: Lazy<ArcSwapOption<ShardRangeCache>> = Lazy::new(|| None
 
 pub const MAX_KEY: [u8; 128] = [0xff; 128];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ShardRange {
     pub(crate) shard_id: u64,
     range_start: Vec<u8>,
-    #[allow(dead_code)]
     range_end: Vec<u8>,
-    #[allow(dead_code)]
     pub(crate) replicates: Vec<SocketAddr>,
     pub(crate) leader: SocketAddr,
-    #[allow(dead_code)]
     update_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for ShardRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        s.push_str("Shard: id: ");
+        s.push_str(&format!("0x{:016x}", self.shard_id));
+        s.push_str(", range: [");
+        s.push_str(&hex::encode(&self.range_start));
+        s.push_str(", ");
+        s.push_str(&hex::encode(&self.range_end));
+        s.push_str("), ");
+        s.push_str(&format!(
+            "replicates: {:?}, leader: {}, update_at: {}",
+            self.replicates, self.leader, self.update_at
+        ));
+
+        f.write_str(&s)
+    }
 }
 
 pub struct ShardRangeCache {
@@ -187,8 +203,10 @@ impl ShardRangeCache {
                         break;
                     }
                     _ = ticker.tick() => {
-                        let _ = Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new(), None)
-                            .await.inspect_err(|e| error!("update range failed, err: {e}"));
+                        match Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new(), None).await {
+                            Err(e) => error!("update ranges failed, err: {e}"),
+                            Ok(_) => debug!("update ranges successfully"),
+                        };
                     }
                 }
             }

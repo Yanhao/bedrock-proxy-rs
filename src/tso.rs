@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 
 use idl_gen::metaserver::AllocateTxidsRequest;
 use tonic::Status;
+use tracing::info;
 
 use crate::{ms_client::get_ms_client, utils::R};
 
@@ -47,6 +48,11 @@ impl Tso {
             .await
             .allocate_txids(AllocateTxidsRequest { count: 10000 })
             .await?;
+
+        info!(
+            "allocated txids, range: [{}, {})",
+            resp.txid_range_start, resp.txid_range_end
+        );
 
         let limit = resp.txid_range_end;
         self.limit.store(limit, atomic::Ordering::Relaxed);
