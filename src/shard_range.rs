@@ -5,6 +5,7 @@ use arc_swap::ArcSwapOption;
 use bytes::Bytes;
 use chrono::prelude::*;
 use once_cell::sync::Lazy;
+use rand::seq::SliceRandom;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tracing::{debug, error, info};
 
@@ -24,6 +25,17 @@ pub struct ShardRange {
     pub(crate) replicates: Vec<SocketAddr>,
     pub(crate) leader: SocketAddr,
     update_at: DateTime<Utc>,
+}
+
+impl ShardRange {
+    pub fn select_address(&self, need_leader: bool) -> Option<SocketAddr> {
+        if need_leader {
+            return Some(self.leader.clone());
+        }
+
+        let mut rng = rand::thread_rng();
+        Some(self.replicates.choose(&mut rng)?.to_owned())
+    }
 }
 
 impl std::fmt::Debug for ShardRange {

@@ -41,7 +41,9 @@ impl ProxyService for ProxyServer {
         let _ = get_ds_client()
             .await
             .kv_set(
-                &shard.leader,
+                &shard
+                    .select_address(true)
+                    .ok_or(Status::internal("no available dataserver"))?,
                 dataserver::KvSetRequest {
                     txid,
                     shard_id: shard.shard_id,
@@ -73,7 +75,9 @@ impl ProxyService for ProxyServer {
         let resp = get_ds_client()
             .await
             .kv_get(
-                &shard.leader,
+                &shard
+                    .select_address(false)
+                    .ok_or(Status::internal("no available dataserver"))?,
                 dataserver::KvGetRequest {
                     txid,
                     shard_id: shard.shard_id,
@@ -105,7 +109,9 @@ impl ProxyService for ProxyServer {
         let _ = get_ds_client()
             .await
             .kv_del(
-                &shard.leader,
+                &shard
+                    .select_address(true)
+                    .ok_or(Status::internal("no available dataserver"))?,
                 dataserver::KvDelRequest {
                     txid,
                     shard_id: shard.shard_id,
@@ -139,7 +145,9 @@ impl ProxyService for ProxyServer {
                 .map_err(|_| Status::internal("get shard route failed"))?;
 
                 let resp = get_ds_client().await.kv_scan(
-                    &shard.leader,
+                    &shard
+                        .select_address(true)
+                        .ok_or(Status::internal("no available dataserver"))?,
                     dataserver::KvScanRequest {
                         txid,
                         shard_id: shard.shard_id,
@@ -195,7 +203,9 @@ impl ProxyService for ProxyServer {
             let _ = get_ds_client()
                 .await
                 .prepare_tx(
-                    &shard.leader,
+                    &shard
+                        .select_address(true)
+                        .ok_or(Status::internal("no available dataserver"))?,
                     dataserver::PrepareTxRequest {
                         txid,
                         shard_id: shard.shard_id,
@@ -218,7 +228,9 @@ impl ProxyService for ProxyServer {
             let _ = get_ds_client()
                 .await
                 .commit_tx(
-                    &shard.leader,
+                    &shard
+                        .select_address(true)
+                        .ok_or(Status::internal("no available dataserver"))?,
                     dataserver::CommitTxRequest {
                         txid,
                         shard_id: shard.shard_id,
@@ -246,7 +258,9 @@ impl ProxyServer {
             let resp = get_ds_client()
                 .await
                 .kv_get(
-                    &shard.leader,
+                    &shard
+                        .select_address(true)
+                        .ok_or(Status::internal("no available dataserver"))?,
                     dataserver::KvGetRequest {
                         txid,
                         shard_id: shard.shard_id,
