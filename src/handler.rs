@@ -146,7 +146,7 @@ impl ProxyService for ProxyServer {
 
                 let resp = get_ds_client().await.kv_scan(
                     &shard
-                        .select_address(true)
+                        .select_address(false)
                         .ok_or(Status::internal("no available dataserver"))?,
                     dataserver::KvScanRequest {
                         txid,
