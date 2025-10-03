@@ -40,6 +40,12 @@ pub struct DsClient {
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
+impl Default for DsClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DsClient {
     pub fn new() -> Self {
         Self {
@@ -103,18 +109,18 @@ impl DsClient {
             return Ok(cli.ds_client.clone());
         }
 
-        let url = format!("http://{}", addr.to_string());
+        let url = format!("http://{}", addr);
         let cli = DataServiceClient::connect(url).await?;
 
         g.insert(
-            addr.clone(),
+            *addr,
             ClientWrapper {
                 ds_client: cli.clone(),
                 expire_at: Utc::now() + chrono::Duration::seconds(10),
             },
         );
 
-        return Ok(cli);
+        Ok(cli)
     }
 
     pub async fn kv_get(&self, addr: &SocketAddr, req: KvGetRequest) -> Result<KvGetResponse> {

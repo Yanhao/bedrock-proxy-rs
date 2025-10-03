@@ -1,6 +1,5 @@
-#![feature(result_option_inspect)]
-
 use clap::{arg, Command};
+
 use idl_gen::proxy::{
     proxy_service_client::ProxyServiceClient, KvDeleteRequest, KvGetRequest, KvSetRequest,
 };
@@ -47,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut proxy_cli = match ProxyServiceClient::connect(proxy_url).await {
         Ok(v) => v,
         Err(e) => {
-            eprint!("connect failed, err: {e}\n");
+            eprintln!("connect failed, err: {e}");
             std::process::exit(-1);
         }
     };
@@ -65,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .await
             {
-                eprint!("kvset failed, err: {e}\n");
+                eprintln!("kvset failed, err: {e}");
             }
         }
         Some(("kvget", subcommand)) => {
@@ -80,13 +79,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
             {
                 Err(e) => {
-                    eprint!("kvget failed, err: {e}\n");
+                    eprintln!("kvget failed, err: {e}");
                 }
                 Ok(v) => {
-                    print!(
-                        "value: {}\n",
-                        String::from_utf8_lossy(&v.into_inner().value)
-                    )
+                    println!("value: {}", String::from_utf8_lossy(&v.into_inner().value))
                 }
             }
         }
@@ -100,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .await
             {
-                eprint!("kvdel failed, err: {e}\n");
+                eprintln!("kvdel failed, err: {e}");
             }
         }
         _ => unreachable!(),

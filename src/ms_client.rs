@@ -36,6 +36,12 @@ pub struct MsClient {
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
+impl Default for MsClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MsClient {
     pub fn new() -> Self {
         Self {
@@ -85,8 +91,8 @@ impl MsClient {
             } else {
                 format!("http://{}", url)
             };
-            if !new_follower_conns.contains_key(&follower_url) {
-                new_follower_conns.insert(follower_url, MetaServiceClient::connect(url).await?);
+            if let std::collections::hash_map::Entry::Vacant(e) = new_follower_conns.entry(follower_url) {
+                e.insert(MetaServiceClient::connect(url).await?);
             }
         }
 

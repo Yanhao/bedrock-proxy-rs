@@ -1,5 +1,3 @@
-#![feature(result_option_inspect)]
-
 use std::{fs, path::Path};
 
 use clap::Parser;
@@ -33,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     create_lock_file(get_config().work_dir.unwrap_or(String::from(".")))
         .inspect_err(|e| error!("failed to create lock file, err: {e}"))?;
 
-    start_background_tasks().await;
+    start_background_tasks().await?;
 
     let grpc_server =
         GrpcServer::builder().add_service(ProxyServiceServer::new(ProxyServer::default()));

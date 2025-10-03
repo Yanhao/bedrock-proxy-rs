@@ -1,32 +1,23 @@
-#![feature(result_option_inspect)]
 #![feature(impl_trait_in_assoc_type)]
-#![feature(async_closure)]
 #![feature(pattern)]
-
-use tracing::info;
 
 pub mod config;
 pub mod ds_client;
 pub mod handler;
 pub mod ms_client;
-pub mod shard_range;
+pub mod shard_route;
 pub mod tso;
 pub mod utils;
 
-use utils::A;
+use anyhow::Result;
+use tracing::info;
 
-pub async fn start_background_tasks() {
+pub async fn start_background_tasks() -> Result<()> {
     info!("startting background tasks ...");
 
-    shard_range::SHARD_RANGE.s({
-        let mut shard_ranger = shard_range::ShardRangeCache::new().await.unwrap();
-        shard_ranger.start().await.unwrap();
-        shard_ranger
-    });
+    shard_route::SHARD_ROUTER.write().await.start().await?;
     info!("shard ranger started");
 
-    tso::TSO.s(tso::Tso::new());
-    info!("tso alloctor inited");
-
     info!("background tasks start finished");
+    Ok(())
 }

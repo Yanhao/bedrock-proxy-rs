@@ -1,21 +1,26 @@
 use std::sync::atomic;
 
 use anyhow::Result;
-use arc_swap::{access::Access, ArcSwapOption};
 use once_cell::sync::Lazy;
-
-use idl_gen::metaserver::AllocateTxidsRequest;
 use tonic::Status;
 use tracing::info;
 
-use crate::{ms_client::get_ms_client, utils::R};
+use idl_gen::metaserver::AllocateTxidsRequest;
 
-pub static TSO: Lazy<ArcSwapOption<Tso>> = Lazy::new(|| None.into());
+use crate::ms_client::get_ms_client;
+
+pub static TSO: Lazy<Tso> = Lazy::new(Tso::new);
 
 pub struct Tso {
     mtx: tokio::sync::Mutex<()>,
     current: atomic::AtomicU64,
     limit: atomic::AtomicU64,
+}
+
+impl Default for Tso {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Tso {
@@ -28,12 +33,9 @@ impl Tso {
     }
 
     pub async fn alloc_txid() -> std::result::Result<u64, tonic::Status> {
-        Ok(TSO
-            .load()
-            .r()
-            .do_allocate_txid()
+        TSO.do_allocate_txid()
             .await
-            .map_err(|e| Status::internal(format!("allcoate txid failed, err: {e}")))?)
+            .map_err(|e| Status::internal(format!("allcoate txid failed, err: {e}")))
     }
 
     async fn do_allocate_txid(&self) -> Result<u64> {
