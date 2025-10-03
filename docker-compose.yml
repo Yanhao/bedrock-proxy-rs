@@ -1,0 +1,33 @@
+version: '3.8'
+
+networks:
+  # Use external network named bedrock-network
+  bedrock-network:
+    external: true
+
+services:
+  bedrock-proxy:
+    # Build from current directory
+    build: .
+    # Set container name
+    container_name: bedrock-proxy
+    # Connect to external network
+    networks:
+      - bedrock-network
+    # Map port 2333 from container to host
+    ports:
+      - "2333:2333"
+    # Mount configuration file
+    volumes:
+      - ./config.toml:/etc/bedrock/proxy.toml:ro
+    # Set environment variables
+    environment:
+      - RUST_LOG=info
+    # Set restart policy
+    restart: unless-stopped
+    # Configure health check
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:2333/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

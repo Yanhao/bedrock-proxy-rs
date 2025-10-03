@@ -1,5 +1,5 @@
 rpc_server_addr = "0.0.0.0:2333"
 work_dir= "."
-metaserver_url = "http://127.0.0.1:1081"
+metaserver_url = "http://metaserver-1:1080"
 storage_id = 5
 update_range_count = 10
