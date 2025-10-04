@@ -43,9 +43,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("stop proxy server");
     });
 
-    signal::ctrl_c().await?;
-
-    info!("ctrl-c pressed");
+    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            info!("ctrl-c pressed");
+        },
+        _ = sigterm.recv() => {
+            info!("SIGTERM received");
+        },
+    };
     if let Err(e) = fs::remove_file(format!(
         "{}/LOCK",
         config::get_config()
