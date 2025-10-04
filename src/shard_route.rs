@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    sync::Arc,
+};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
@@ -82,6 +85,23 @@ impl ShardRouter {
         }
 
         let guard = self.shard_ranges.read();
+        if guard.is_empty() {
+            return Err(anyhow!("shard route is empty"));
+        }
+
+        if guard.len() == 1 {
+            let (_, ret) = guard.iter().next().unwrap();
+            return Ok(ret.clone());
+        }
+
+        // let _ = guard
+        //     .iter()
+        //     .map(|(_, s)| {
+        //         info!("range start: {s:#?}");
+        //         ()
+        //     })
+        //     .collect::<()>();
+
         let (_, sr) = guard
             .get_prev(key.as_ref())
             .ok_or(anyhow!("get prev failed"))?;
@@ -133,12 +153,12 @@ impl ShardRouter {
                         range_start: range_start.clone(),
                         range_count: get_config().update_range_count,
                     };
-                    info!("ScanShardRangeRequest: {:#?}", req);
+                    // info!("ScanShardRangeRequest: {:#?}", req);
                     req
                 })
                 .await?;
 
-            info!("ScanShardRangeResponse: {:#?}", resp);
+            // info!("ScanShardRangeResponse: {:#?}", resp);
             if resp.is_end {
                 break;
             }
@@ -178,11 +198,11 @@ impl ShardRouter {
                         shard_id: sr.shard_id,
                         range_start: sr.range_start.clone(),
                         range_end: sr.range_end.clone(),
-                        leader: sr.leader_addr.parse().unwrap(),
+                        leader: sr.leader_addr.to_socket_addrs().unwrap().next().unwrap(),
                         replicates: sr
                             .addrs
                             .iter()
-                            .map(|x| x.parse().unwrap())
+                            .map(|x| x.to_socket_addrs().unwrap().next().unwrap())
                             .collect::<Vec<_>>(),
                         update_at: Utc::now(),
                     },
@@ -212,7 +232,7 @@ impl ShardRouter {
         let shard_ranges = self.shard_ranges.clone();
 
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(5));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // make sure ms_client init successful first
 
