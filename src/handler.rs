@@ -29,8 +29,8 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvSetRequest>,
     ) -> Result<Response<KvSetResponse>, Status> {
-        info!("requst: {:#?}", request);
         let request = request.into_inner();
+        info!("requst: {:#?}", request);
         let txid = Tso::alloc_txid().await?;
 
         let shard = Self::shard_route(request.storage_id, request.key.clone().into())
@@ -63,8 +63,8 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvGetRequest>,
     ) -> Result<Response<KvGetResponse>, Status> {
-        info!("requst: {:#?}", request);
         let request = request.into_inner();
+        info!("requst: {:#?}", request);
         let txid = Tso::alloc_txid().await?;
 
         let shard = Self::shard_route(request.storage_id, request.key.clone().into())
@@ -99,8 +99,8 @@ impl ProxyService for ProxyServer {
         &self,
         request: Request<KvDeleteRequest>,
     ) -> Result<Response<KvDeleteResponse>, Status> {
-        info!("requst: {:#?}", request);
         let request = request.into_inner();
+        info!("requst: {:#?}", request);
         let txid = Tso::alloc_txid().await?;
 
         let shard = Self::shard_route(request.storage_id, request.key.clone().into())
@@ -134,6 +134,7 @@ impl ProxyService for ProxyServer {
         request: Request<KvScanRequest>,
     ) -> Result<Response<Self::KvScanStream>, Status> {
         let request = request.into_inner();
+        info!("requst: {:#?}", request);
         let txid = Tso::alloc_txid().await?;
 
         let (start_key, limit) = (Bytes::from(request.prefix.clone()), request.limit);
@@ -185,6 +186,7 @@ impl ProxyService for ProxyServer {
         request: Request<BatchRequest>,
     ) -> Result<Response<BatchResponse>, Status> {
         let request = request.into_inner();
+        info!("requst: {:#?}", request);
         let txid = Tso::alloc_txid().await?;
 
         if !self
