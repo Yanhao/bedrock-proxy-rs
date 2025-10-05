@@ -157,11 +157,8 @@ impl ShardRouter {
                 .await?;
 
             // info!("ScanShardRangeResponse: {:#?}", resp);
-            if resp.is_end {
-                break;
-            }
 
-            let ranges_copy = shard_ranges.write().clone();
+            let mut ranges_copy = shard_ranges.write().clone();
 
             let (first_key, last_key) = (
                 Bytes::from(resp.ranges.first().unwrap().range_start.clone()),
@@ -186,11 +183,11 @@ impl ShardRouter {
             };
 
             for range_key in ranges_to_remove.iter() {
-                shard_ranges.write().remove(range_key);
+                ranges_copy.remove(range_key);
             }
 
             for sr in resp.ranges.iter() {
-                shard_ranges.write().insert(
+                ranges_copy.insert(
                     Bytes::from(sr.range_start.clone()),
                     ShardInfo {
                         shard_id: sr.shard_id,
@@ -206,9 +203,12 @@ impl ShardRouter {
                     },
                 );
             }
+            *shard_ranges.write() = ranges_copy;
 
+            if resp.is_end {
+                break;
+            }
             range_start = last_key.into();
-
             if range_start >= range_end {
                 break;
             }
@@ -217,6 +217,7 @@ impl ShardRouter {
             if count >= max_count {
                 break;
             }
+
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         }
 
