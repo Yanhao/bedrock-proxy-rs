@@ -6,7 +6,6 @@ use std::{
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use chrono::prelude::*;
-use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tracing::{error, info};
@@ -14,9 +13,6 @@ use tracing::{error, info};
 use idl_gen::metaserver::ScanShardRangeRequest;
 
 use crate::{config::get_config, ms_client::get_ms_client};
-
-pub static SHARD_ROUTER: Lazy<tokio::sync::RwLock<ShardRouter>> =
-    Lazy::new(|| tokio::sync::RwLock::new(ShardRouter::new()));
 
 pub const MAX_KEY: [u8; 128] = [0xff; 128];
 
@@ -62,14 +58,16 @@ impl std::fmt::Debug for ShardInfo {
 
 pub struct ShardRouter {
     shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardInfo>>>,
+    storage_id: u32,
 
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
 impl ShardRouter {
-    fn new() -> Self {
+    pub fn new(storage_id: u32) -> Self {
         Self {
             shard_ranges: Arc::new(parking_lot::RwLock::new(im::OrdMap::new())),
+            storage_id,
             stop_ch: None,
         }
     }
@@ -93,14 +91,6 @@ impl ShardRouter {
             let (_, ret) = guard.iter().next().unwrap();
             return Ok(ret.clone());
         }
-
-        // let _ = guard
-        //     .iter()
-        //     .map(|(_, s)| {
-        //         info!("range start: {s:#?}");
-        //         ()
-        //     })
-        //     .collect::<()>();
 
         let (_, sr) = guard
             .get_prev(key.as_ref())
@@ -129,12 +119,20 @@ impl ShardRouter {
         end: Bytes,
         max_count: Option<u32>,
     ) -> Result<()> {
-        Self::update_ranges(self.shard_ranges.clone(), start, end, max_count).await?;
+        Self::update_ranges(
+            self.storage_id,
+            self.shard_ranges.clone(),
+            start,
+            end,
+            max_count,
+        )
+        .await?;
 
         Ok(())
     }
 
     async fn update_ranges(
+        storage_id: u32,
         shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardInfo>>>,
         range_start: Bytes,
         range_end: Bytes,
@@ -149,7 +147,7 @@ impl ShardRouter {
                 .await
                 .scan_shard_range({
                     let req = ScanShardRangeRequest {
-                        storage_id: get_config().storage_id,
+                        storage_id,
                         range_start: range_start.clone(),
                         range_count: get_config().update_range_count,
                     };
@@ -225,11 +223,12 @@ impl ShardRouter {
         Ok(())
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    pub fn start(&mut self) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 
         let shard_ranges = self.shard_ranges.clone();
+        let storage_id = self.storage_id;
 
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(5));
@@ -242,15 +241,15 @@ impl ShardRouter {
                         break;
                     }
                     _ = ticker.tick() => {
-                        match Self::update_ranges(shard_ranges.clone(), Bytes::new(), Bytes::new(), None).await {
+                        match Self::update_ranges(storage_id, shard_ranges.clone(), Bytes::new(), Bytes::new(), None).await {
                             Err(e) => error!("update ranges failed, err: {e}"),
-                            Ok(_) => info!("update ranges successfully"),
+                            Ok(_) => info!("update ranges for starogeid: {storage_id} successfully"),
                         };
                     }
                 }
             }
 
-            info!("shard router stopped ...");
+            info!("shard router for storageid: {storage_id} started...");
         });
 
         Ok(())
