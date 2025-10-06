@@ -15,7 +15,7 @@ use idl_gen::proxy::{
     KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, PredicateOp,
 };
 
-use crate::ds_client::get_ds_client;
+use crate::ds_client::DS_CLIENTS;
 use crate::route_manager;
 use crate::shard_route::ShardInfo;
 use crate::tso::Tso;
@@ -38,8 +38,7 @@ impl ProxyService for ProxyServer {
             .map_err(|e| Status::internal(format!("get shard route failed, err: {e}")))?;
         info!("shard: {shard:#?}");
 
-        let _ = get_ds_client()
-            .await
+        let _ = DS_CLIENTS
             .kv_set(
                 &shard
                     .select_address(true)
@@ -72,8 +71,7 @@ impl ProxyService for ProxyServer {
             .map_err(|_| Status::internal("get shard route failed"))?;
         info!("shard: {shard:#?}");
 
-        let resp = get_ds_client()
-            .await
+        let resp = DS_CLIENTS
             .kv_get(
                 &shard
                     .select_address(false)
@@ -108,8 +106,7 @@ impl ProxyService for ProxyServer {
             .map_err(|_| Status::internal("get shard route failed"))?;
         info!("shard: {shard:#?}");
 
-        let _ = get_ds_client()
-            .await
+        let _ = DS_CLIENTS
             .kv_del(
                 &shard
                     .select_address(true)
@@ -147,7 +144,7 @@ impl ProxyService for ProxyServer {
                 .await
                 .map_err(|_| Status::internal("get shard route failed"))?;
 
-                let resp = get_ds_client().await.kv_scan(
+                let resp = DS_CLIENTS.kv_scan(
                     &shard
                         .select_address(false)
                         .ok_or(Status::internal("no available dataserver"))?,
@@ -204,8 +201,7 @@ impl ProxyService for ProxyServer {
                 .await
                 .map_err(|_| Status::internal("get shard route failed"))?;
 
-            let _ = get_ds_client()
-                .await
+            let _ = DS_CLIENTS
                 .prepare_tx(
                     &shard
                         .select_address(true)
@@ -229,8 +225,7 @@ impl ProxyService for ProxyServer {
                 .await
                 .map_err(|_| Status::internal("get shard route failed"))?;
 
-            let _ = get_ds_client()
-                .await
+            let _ = DS_CLIENTS
                 .commit_tx(
                     &shard
                         .select_address(true)
@@ -259,8 +254,7 @@ impl ProxyServer {
     ) -> anyhow::Result<bool> {
         for p in predicates.into_iter() {
             let shard = Self::shard_route(storage_id, p.key.clone().into()).await?;
-            let resp = get_ds_client()
-                .await
+            let resp = DS_CLIENTS
                 .kv_get(
                     &shard
                         .select_address(true)
@@ -291,8 +285,7 @@ impl ProxyServer {
     async fn shard_route(storage_id: u32, key: Bytes) -> anyhow::Result<ShardInfo> {
         let route = route_manager::get_shard_route(storage_id)?;
 
-        let lg = route.read().await;
-        lg.get_shard_range(key, false).await
+        route.get_shard_range(key, false).await
     }
 }
 

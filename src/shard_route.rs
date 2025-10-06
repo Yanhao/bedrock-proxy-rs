@@ -12,7 +12,7 @@ use tracing::{error, info};
 
 use idl_gen::metaserver::ScanShardRangeRequest;
 
-use crate::{config::get_config, ms_client::get_ms_client};
+use crate::{config::get_config, ms_client::MS_CLIENT};
 
 pub const MAX_KEY: [u8; 128] = [0xff; 128];
 
@@ -143,20 +143,15 @@ impl ShardRouter {
         let (max_count, mut count) = (max_count.unwrap_or(std::u32::MAX), 0);
 
         loop {
-            let resp = get_ms_client()
-                .await
+            let resp = MS_CLIENT
                 .scan_shard_range({
-                    let req = ScanShardRangeRequest {
+                    ScanShardRangeRequest {
                         storage_id,
                         range_start: range_start.clone(),
                         range_count: get_config().update_range_count,
-                    };
-                    // info!("ScanShardRangeRequest: {:#?}", req);
-                    req
+                    }
                 })
                 .await?;
-
-            // info!("ScanShardRangeResponse: {:#?}", resp);
 
             let mut ranges_copy = shard_ranges.write().clone();
 
@@ -256,7 +251,7 @@ impl ShardRouter {
         Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
         if let Some(s) = self.stop_ch.as_ref() {
             s.send(()).await?;
         }

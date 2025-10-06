@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use arc_swap::ArcSwapOption;
-use tokio::sync::OnceCell;
+use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tonic::transport::Channel;
+use tracing::{error, info};
 
 use crate::config;
 use crate::utils::{A, R};
@@ -16,18 +17,11 @@ use idl_gen::metaserver::{
     InfoRequest, ScanShardRangeRequest, ScanShardRangeResponse,
 };
 
-static MS_CLIENT: OnceCell<MsClient> = OnceCell::const_new();
-
-pub async fn get_ms_client() -> &'static MsClient {
-    MS_CLIENT
-        .get_or_init(|| async {
-            let mut ms_client = MsClient::new();
-            ms_client.start().await.unwrap();
-
-            ms_client
-        })
-        .await
-}
+pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(|| {
+    let mut ms_client = MsClient::new();
+    ms_client.start();
+    ms_client
+});
 
 pub struct MsClient {
     leader_conn: Arc<ArcSwapOption<(String, MetaServiceClient<Channel>)>>,
@@ -91,7 +85,9 @@ impl MsClient {
             } else {
                 format!("http://{}", url)
             };
-            if let std::collections::hash_map::Entry::Vacant(e) = new_follower_conns.entry(follower_url) {
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                new_follower_conns.entry(follower_url)
+            {
                 e.insert(MetaServiceClient::connect(url).await?);
             }
         }
@@ -101,20 +97,32 @@ impl MsClient {
         Ok(())
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    fn start(&mut self) {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
-
-        {
-            let ms_addr = config::get_config().metaserver_url.clone();
-            let conn = MetaServiceClient::connect(ms_addr.clone()).await?;
-            self.leader_conn.s((ms_addr, conn));
-        }
 
         let leader_conn = self.leader_conn.clone();
         let follower_conns = self.follower_conns.clone();
 
         tokio::spawn(async move {
+            loop {
+                let ms_addr = config::get_config().metaserver_url.clone();
+                match MetaServiceClient::connect(ms_addr.clone()).await {
+                    Ok(conn) => {
+                        info!("connect to metaserver success, to_addr: {}", ms_addr);
+                        leader_conn.s((ms_addr, conn));
+                        break;
+                    }
+                    Err(e) => {
+                        error!(
+                            "connect to metaserver failed, to_addr: {}, err: {e}",
+                            ms_addr
+                        );
+                    }
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // make sure ms_client init successful first
@@ -130,11 +138,9 @@ impl MsClient {
                 }
             }
         });
-
-        Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
         if let Some(s) = self.stop_ch.as_ref() {
             s.send(()).await?;
         }

@@ -23,6 +23,7 @@ services:
     # Set environment variables
     environment:
       - RUST_LOG=info
+      - RUST_BACKTRACE=1
     # Set restart policy
     restart: unless-stopped
     # Configure health check

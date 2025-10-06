@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chrono::prelude::*;
-use tokio::sync::OnceCell;
+use once_cell::sync::Lazy;
+use tokio::sync::RwLock;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tonic::transport::Channel;
 
@@ -16,17 +17,11 @@ use idl_gen::{
     },
 };
 
-static DS_CLIENT: OnceCell<DsClient> = OnceCell::const_new();
-pub async fn get_ds_client() -> &'static DsClient {
-    DS_CLIENT
-        .get_or_init(|| async {
-            let mut ds_client = DsClient::new();
-            ds_client.start().await.unwrap();
-
-            ds_client
-        })
-        .await
-}
+pub static DS_CLIENTS: Lazy<DsClient> = Lazy::new(|| {
+    let mut client = DsClient::new();
+    client.start();
+    client
+});
 
 #[derive(Clone)]
 struct ClientWrapper {
@@ -35,7 +30,7 @@ struct ClientWrapper {
 }
 
 pub struct DsClient {
-    conns: Arc<tokio::sync::RwLock<im::HashMap<SocketAddr, ClientWrapper>>>,
+    conns: Arc<RwLock<im::HashMap<SocketAddr, ClientWrapper>>>,
 
     stop_ch: Option<mpsc::Sender<()>>,
 }
@@ -47,28 +42,23 @@ impl Default for DsClient {
 }
 
 impl DsClient {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
-            conns: Arc::new(tokio::sync::RwLock::new(im::HashMap::new())),
+            conns: Arc::new(RwLock::new(im::HashMap::new())),
             stop_ch: None,
         }
     }
 
-    async fn check_expires(
-        conns: Arc<tokio::sync::RwLock<im::HashMap<SocketAddr, ClientWrapper>>>,
-    ) -> Result<()> {
+    async fn check_expires(conns: Arc<RwLock<im::HashMap<SocketAddr, ClientWrapper>>>) {
         let conns_copy = conns.read().await.clone();
-
         for (addr, client) in conns_copy.iter() {
             if client.expire_at < Utc::now() {
                 conns.write().await.remove(addr);
             }
         }
-
-        Ok(())
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    fn start(&mut self) {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 
@@ -84,16 +74,14 @@ impl DsClient {
                         break;
                     }
                     _ = ticker.tick() => {
-                        let _ = Self::check_expires(conns.clone());
+                        Self::check_expires(conns.clone()).await;
                     }
                 }
             }
         });
-
-        Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
         if let Some(s) = self.stop_ch.as_ref() {
             s.send(()).await?;
         }
@@ -104,6 +92,10 @@ impl DsClient {
 
 impl DsClient {
     async fn get_conn(&self, addr: &SocketAddr) -> Result<DataServiceClient<Channel>> {
+        if let Some(cli) = self.conns.read().await.get(addr) {
+            return Ok(cli.ds_client.clone());
+        }
+
         let mut g = self.conns.write().await;
         if let Some(cli) = g.get(addr) {
             return Ok(cli.ds_client.clone());

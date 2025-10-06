@@ -7,7 +7,7 @@ use tracing::info;
 
 use idl_gen::metaserver::AllocateTxidsRequest;
 
-use crate::ms_client::get_ms_client;
+use crate::ms_client::MS_CLIENT;
 
 pub static TSO: Lazy<Tso> = Lazy::new(Tso::new);
 
@@ -46,8 +46,7 @@ impl Tso {
             return Ok(self.current.fetch_add(1, atomic::Ordering::Relaxed) + 1);
         }
 
-        let resp = get_ms_client()
-            .await
+        let resp = MS_CLIENT
             .allocate_txids(AllocateTxidsRequest { count: 10000 })
             .await?;
 

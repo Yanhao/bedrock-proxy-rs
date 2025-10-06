@@ -3,15 +3,13 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
 
 use crate::shard_route;
 
-static ROUTE_MANAGER: Lazy<
-    parking_lot::RwLock<HashMap<u32, Arc<RwLock<shard_route::ShardRouter>>>>,
-> = Lazy::new(|| parking_lot::RwLock::new(HashMap::new()));
+static ROUTE_MANAGER: Lazy<parking_lot::RwLock<HashMap<u32, Arc<shard_route::ShardRouter>>>> =
+    Lazy::new(|| parking_lot::RwLock::new(HashMap::new()));
 
-pub fn get_shard_route(storage_id: u32) -> Result<Arc<RwLock<shard_route::ShardRouter>>> {
+pub fn get_shard_route(storage_id: u32) -> Result<Arc<shard_route::ShardRouter>> {
     if let Some(route) = ROUTE_MANAGER.read().get(&storage_id) {
         return Ok(route.clone());
     }
@@ -20,11 +18,11 @@ pub fn get_shard_route(storage_id: u32) -> Result<Arc<RwLock<shard_route::ShardR
         return Ok(route.clone());
     }
 
-    let router = Arc::new(RwLock::new({
+    let router = Arc::new({
         let mut r = shard_route::ShardRouter::new(storage_id);
         r.start()?;
         r
-    }));
+    });
 
     lg.insert(storage_id, router.clone());
 

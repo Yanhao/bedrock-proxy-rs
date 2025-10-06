@@ -11,10 +11,15 @@ pub mod tso;
 pub mod utils;
 
 use anyhow::Result;
+use ds_client::DS_CLIENTS;
+use ms_client::MS_CLIENT;
 use tracing::info;
 
 pub async fn start_background_tasks() -> Result<()> {
-    info!("startting background tasks ...");
+    info!("starting background tasks ...");
+
+    _ = *MS_CLIENT;
+    _ = *DS_CLIENTS;
 
     info!("background tasks start finished");
     Ok(())
