@@ -6,11 +6,13 @@ use std::{
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use chrono::prelude::*;
+use idl_gen::metaserver::get_shard_route_response::RouteType;
+use murmur3::murmur3_x64_128;
 use rand::seq::SliceRandom;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tracing::{error, info};
 
-use idl_gen::metaserver::ScanShardRangeRequest;
+use idl_gen::metaserver::GetShardRouteRequest;
 
 use crate::{config::get_config, ms_client::MS_CLIENT};
 
@@ -58,6 +60,8 @@ impl std::fmt::Debug for ShardInfo {
 
 pub struct ShardRouter {
     shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardInfo>>>,
+    slots: Arc<parking_lot::RwLock<Vec<ShardInfo>>>,
+    route_type: Arc<parking_lot::RwLock<RouteType>>,
     storage_id: u32,
 
     stop_ch: Option<mpsc::Sender<()>>,
@@ -67,6 +71,8 @@ impl ShardRouter {
     pub fn new(storage_id: u32) -> Self {
         Self {
             shard_ranges: Arc::new(parking_lot::RwLock::new(im::OrdMap::new())),
+            slots: Arc::new(parking_lot::RwLock::new(vec![])),
+            route_type: Arc::new(parking_lot::RwLock::new(RouteType::Range)),
             storage_id,
             stop_ch: None,
         }
@@ -82,21 +88,41 @@ impl ShardRouter {
             .await?;
         }
 
-        let guard = self.shard_ranges.read();
-        if guard.is_empty() {
-            return Err(anyhow!("shard route is empty"));
+        // Check route type
+        let route_type = *self.route_type.read();
+        match route_type {
+            RouteType::Range => {
+                let guard = self.shard_ranges.read();
+                if guard.is_empty() {
+                    return Err(anyhow!("shard route is empty"));
+                }
+
+                if guard.len() == 1 {
+                    let (_, ret) = guard.iter().next().unwrap();
+                    return Ok(ret.clone());
+                }
+
+                let (_, sr) = guard
+                    .get_prev(key.as_ref())
+                    .ok_or(anyhow!("get prev failed"))?;
+
+                Ok(sr.clone())
+            }
+            RouteType::Hash => {
+                let slots = self.slots.read();
+                if slots.is_empty() {
+                    return Err(anyhow!("shard slots is empty"));
+                }
+
+                // Compute murmur3 hash
+                let mut key_cursor = std::io::Cursor::new(key.clone());
+                let hash = murmur3_x64_128(&mut key_cursor, 0)?;
+
+                // Get slot index
+                let slot_index = hash as usize % slots.len();
+                Ok(slots[slot_index].clone())
+            }
         }
-
-        if guard.len() == 1 {
-            let (_, ret) = guard.iter().next().unwrap();
-            return Ok(ret.clone());
-        }
-
-        let (_, sr) = guard
-            .get_prev(key.as_ref())
-            .ok_or(anyhow!("get prev failed"))?;
-
-        Ok(sr.clone())
     }
 
     pub fn scan_shard_range(&self, start: Bytes, end: Bytes) -> Result<Vec<ShardInfo>> {
@@ -122,6 +148,8 @@ impl ShardRouter {
         Self::update_ranges(
             self.storage_id,
             self.shard_ranges.clone(),
+            self.slots.clone(),
+            self.route_type.clone(),
             start,
             end,
             max_count,
@@ -134,6 +162,8 @@ impl ShardRouter {
     async fn update_ranges(
         storage_id: u32,
         shard_ranges: Arc<parking_lot::RwLock<im::OrdMap<Bytes, ShardInfo>>>,
+        slots: Arc<parking_lot::RwLock<Vec<ShardInfo>>>,
+        route_type: Arc<parking_lot::RwLock<RouteType>>,
         range_start: Bytes,
         range_end: Bytes,
         max_count: Option<u32>,
@@ -144,8 +174,8 @@ impl ShardRouter {
 
         loop {
             let resp = MS_CLIENT
-                .scan_shard_range({
-                    ScanShardRangeRequest {
+                .get_shard_route({
+                    GetShardRouteRequest {
                         storage_id,
                         range_start: range_start.clone(),
                         range_count: get_config().update_range_count,
@@ -153,59 +183,99 @@ impl ShardRouter {
                 })
                 .await?;
 
-            let mut ranges_copy = shard_ranges.write().clone();
+            // Update route type
+            let response_route_type = RouteType::try_from(resp.range_type)
+                .map_err(|_| anyhow!("invalid route type: {}", resp.range_type))?;
+            *route_type.write() = response_route_type;
 
-            let (first_key, last_key) = (
-                Bytes::from(resp.ranges.first().unwrap().range_start.clone()),
-                Bytes::from(resp.ranges.last().unwrap().range_end.clone()),
-            );
+            match response_route_type {
+                RouteType::Range => {
+                    let mut ranges_copy = shard_ranges.write().clone();
 
-            let ranges_to_remove = {
-                let mut r = ranges_copy
-                    .range(first_key.clone()..last_key.clone())
-                    .map(|(range_start, _)| range_start.clone())
-                    .collect::<Vec<_>>();
-                if r.is_empty() {
-                    vec![]
-                } else {
-                    if first_key != *(r.first().unwrap()) {
-                        if let Some((range_start, _)) = ranges_copy.get_prev(&first_key) {
-                            r.insert(0, range_start.clone());
+                    let (first_key, last_key) = (
+                        Bytes::from(resp.ranges.first().unwrap().range_start.clone()),
+                        Bytes::from(resp.ranges.last().unwrap().range_end.clone()),
+                    );
+
+                    let ranges_to_remove = {
+                        let mut r = ranges_copy
+                            .range(first_key.clone()..last_key.clone())
+                            .map(|(range_start, _)| range_start.clone())
+                            .collect::<Vec<_>>();
+                        if r.is_empty() {
+                            vec![]
+                        } else {
+                            if first_key != *(r.first().unwrap()) {
+                                if let Some((range_start, _)) = ranges_copy.get_prev(&first_key) {
+                                    r.insert(0, range_start.clone());
+                                }
+                            }
+                            r
                         }
+                    };
+
+                    for range_key in ranges_to_remove.iter() {
+                        ranges_copy.remove(range_key);
                     }
-                    r
+
+                    for sr in resp.ranges.iter() {
+                        ranges_copy.insert(
+                            Bytes::from(sr.range_start.clone()),
+                            ShardInfo {
+                                shard_id: sr.shard_id,
+                                range_start: sr.range_start.clone(),
+                                range_end: sr.range_end.clone(),
+                                leader: sr.leader_addr.to_socket_addrs().unwrap().next().unwrap(),
+                                replicates: sr
+                                    .addrs
+                                    .iter()
+                                    .map(|x| x.to_socket_addrs().unwrap().next().unwrap())
+                                    .collect::<Vec<_>>(),
+                                update_at: Utc::now(),
+                            },
+                        );
+                    }
+                    *shard_ranges.write() = ranges_copy;
+
+                    // Clear slots since we're using range-based routing
+                    slots.write().clear();
+
+                    if resp.is_range_end {
+                        break;
+                    }
+                    range_start = last_key.into();
+                    if range_start >= range_end {
+                        break;
+                    }
                 }
-            };
+                RouteType::Hash => {
+                    // Clear ranges since we're using hash-based routing
+                    shard_ranges.write().clear();
 
-            for range_key in ranges_to_remove.iter() {
-                ranges_copy.remove(range_key);
-            }
+                    // Process slots
+                    let mut new_slots = Vec::new();
+                    for slot in resp.slots.iter() {
+                        new_slots.push(ShardInfo {
+                            shard_id: slot.shard_id,
+                            range_start: vec![], // Not used for hash routing
+                            range_end: vec![],   // Not used for hash routing
+                            leader: slot.leader_addr.to_socket_addrs().unwrap().next().unwrap(),
+                            replicates: slot
+                                .addrs
+                                .iter()
+                                .map(|x| x.to_socket_addrs().unwrap().next().unwrap())
+                                .collect(),
+                            update_at: Utc::now(),
+                        });
+                    }
 
-            for sr in resp.ranges.iter() {
-                ranges_copy.insert(
-                    Bytes::from(sr.range_start.clone()),
-                    ShardInfo {
-                        shard_id: sr.shard_id,
-                        range_start: sr.range_start.clone(),
-                        range_end: sr.range_end.clone(),
-                        leader: sr.leader_addr.to_socket_addrs().unwrap().next().unwrap(),
-                        replicates: sr
-                            .addrs
-                            .iter()
-                            .map(|x| x.to_socket_addrs().unwrap().next().unwrap())
-                            .collect::<Vec<_>>(),
-                        update_at: Utc::now(),
-                    },
-                );
-            }
-            *shard_ranges.write() = ranges_copy;
+                    // Update slots
+                    let mut slots_guard = slots.write();
+                    *slots_guard = new_slots;
 
-            if resp.is_end {
-                break;
-            }
-            range_start = last_key.into();
-            if range_start >= range_end {
-                break;
+                    // For hash routing, we don't need to continue scanning
+                    break;
+                }
             }
 
             count += get_config().update_range_count;
@@ -224,6 +294,8 @@ impl ShardRouter {
         self.stop_ch.replace(tx);
 
         let shard_ranges = self.shard_ranges.clone();
+        let slots = self.slots.clone();
+        let route_type = self.route_type.clone();
         let storage_id = self.storage_id;
 
         tokio::spawn(async move {
@@ -237,9 +309,9 @@ impl ShardRouter {
                         break;
                     }
                     _ = ticker.tick() => {
-                        match Self::update_ranges(storage_id, shard_ranges.clone(), Bytes::new(), Bytes::new(), None).await {
+                        match Self::update_ranges(storage_id, shard_ranges.clone(), slots.clone(), route_type.clone(), Bytes::new(), Bytes::new(), None).await {
                             Err(e) => error!("update ranges failed, err: {e}"),
-                            Ok(_) => info!("update ranges for starogeid: {storage_id} successfully"),
+                            Ok(_) => info!("update ranges for storageid: {storage_id} successfully"),
                         };
                     }
                 }

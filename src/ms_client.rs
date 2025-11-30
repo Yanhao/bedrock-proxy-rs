@@ -14,7 +14,7 @@ use crate::utils::{A, R};
 
 use idl_gen::metaserver::{
     meta_service_client::MetaServiceClient, AllocateTxidsRequest, AllocateTxidsResponse,
-    InfoRequest, ScanShardRangeRequest, ScanShardRangeResponse,
+    GetShardRouteRequest, GetShardRouteResponse, InfoRequest,
 };
 
 pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(|| {
@@ -150,13 +150,13 @@ impl MsClient {
 }
 
 impl MsClient {
-    pub async fn scan_shard_range(
+    pub async fn get_shard_route(
         &self,
-        req: ScanShardRangeRequest,
-    ) -> Result<ScanShardRangeResponse> {
+        req: GetShardRouteRequest,
+    ) -> Result<GetShardRouteResponse> {
         let (_, mut cli) = (*self.leader_conn.load().r().clone()).clone();
 
-        Ok(cli.scan_shard_range(req).await?.into_inner())
+        Ok(cli.get_shard_route(req).await?.into_inner())
     }
 
     pub async fn allocate_txids(&self, req: AllocateTxidsRequest) -> Result<AllocateTxidsResponse> {
