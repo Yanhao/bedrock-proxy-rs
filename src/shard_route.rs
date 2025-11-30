@@ -6,7 +6,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use chrono::prelude::*;
-use idl_gen::metaserver::get_shard_route_response::RouteType;
+use idl_gen::metaserver::RouteType;
 use murmur3::murmur3_x64_128;
 use rand::seq::SliceRandom;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
@@ -184,8 +184,8 @@ impl ShardRouter {
                 .await?;
 
             // Update route type
-            let response_route_type = RouteType::try_from(resp.range_type)
-                .map_err(|_| anyhow!("invalid route type: {}", resp.range_type))?;
+            let response_route_type = RouteType::try_from(resp.route_type)
+                .map_err(|_| anyhow!("invalid route type: {}", resp.route_type))?;
             *route_type.write() = response_route_type;
 
             match response_route_type {
